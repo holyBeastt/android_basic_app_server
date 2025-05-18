@@ -8,9 +8,9 @@ const login = async (req, res) => {
   const { username, password } = req.body;
 
   const { data: user, error } = await supabase
-    .from("account")
+    .from("users")
     .select("*")
-    .eq("username", username)
+    .eq("username_acc", username)
     .single();
 
   if (!user || error) {
@@ -41,9 +41,9 @@ const register = async (req, res) => {
 
   // Kiểm tra xem username đã tồn tại chưa
   const { data: existingUser } = await supabase
-    .from("account")
+    .from("users")
     .select("*")
-    .eq("username", username)
+    .eq("username_acc", username)
     .single();
 
   if (existingUser) {
@@ -55,8 +55,8 @@ const register = async (req, res) => {
 
   // Thêm vào bảng account
   const { data, error } = await supabase
-    .from("account")
-    .insert([{ username, password: hashedPassword }])
+    .from("users")
+    .insert([{ username_acc: username, password: hashedPassword }])
     .select();
 
   if (error) {
