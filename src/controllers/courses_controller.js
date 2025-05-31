@@ -5,9 +5,7 @@ const getTopCoursesList = async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("courses")
-      .select(
-        "id, user_name, title, subtitle, description, thumbnail_url, price, discount_price, discount_end_date, level"
-      )
+      .select("*")
       .order("created_at", { ascending: false });
 
     if (error) {
