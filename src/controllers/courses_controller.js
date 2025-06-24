@@ -12,7 +12,7 @@ const getTopCoursesList = async (req, res) => {
       console.error("Lỗi Supabase:", error);
       return res.status(500).json({ error: error.message });
     }
-
+console.log("data =============", data);
     return res.status(200).json(data);
   } catch (err) {
     console.error("Lỗi server:", err);
@@ -116,6 +116,35 @@ const getReviews = async (req, res) => {
 
   return res.status(200).json(reviews);
 };
+const addReview = async (req, res) => {
+  const courseId = req.params.id;
+  const { user_id, user_name, rating, comment } = req.body;
+
+  console.log("========", courseId , user_id, user_name, rating, comment);
+
+  if (!user_id || !user_name || !rating || !comment) {
+    return res.status(400).json({ error: "Thiếu thông tin đánh giá." });
+  }
+
+  const { error } = await supabase.from("reviews").insert([
+    {
+      course_id: courseId,
+      user_id,
+      user_name,
+      rating,
+      comment,
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  // ✅ Đây mới là cách trả phản hồi đúng
+  return res.status(201).json({ message: "Đánh giá đã được gửi thành công." });
+};
+
 
 const getTeacherInfo = async (req, res) => {
   const userId = req.params.id;
@@ -164,5 +193,6 @@ export default {
   getCourseWithCategory,
   getCourseWithSearch,
   getReviews,
+  addReview,
   getTeacherInfo,
 };

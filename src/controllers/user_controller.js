@@ -7,6 +7,7 @@ const getUserInfo = async (req, res) => {
   try {
     // Lấy userId từ params hoặc body (tùy bạn truyền kiểu nào)
     const userId = req.params.userId
+    console.log("userId:=======", userId);
     if (!userId) {
       return res.status(400).json({ error: "Thiếu userId." });
     }
@@ -20,17 +21,7 @@ console.log("Data:", data);
     if (error || !data) {
       return res.status(404).json({ error: "Không tìm thấy người dùng." });
     }
-
-    return res.status(200).json({
-      user: {
-        id: data.id,
-        username: data.username_acc,
-        password: data.password,
-        bio: data.bio,
-        sex: data.sex,
-        avatar: data.avatar_url,
-      },
-    });
+    return res.status(200).json(data);
   } catch (err) {
     return res.status(500).json({ error: "Lỗi server." });
   }

@@ -18,4 +18,6 @@ router.get("/:id/gv-info", courses_controller.getTeacherInfo);
 router.get("/category/:category", courses_controller.getCourseWithCategory);
 // Lấy danh sách khóa học theo từ khóa tìm kiếm
 router.get("/search", courses_controller.getCourseWithSearch);
+// Thêm nhận xét cho khóa học
+router.post("/:id/reviews", courses_controller.addReview);
 export default router;
