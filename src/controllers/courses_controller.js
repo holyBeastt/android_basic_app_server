@@ -52,8 +52,10 @@ const getCourseWithCategory = async (req, res) => {
 const getCourseWithSearch = async (req, res) => {
   const searchQuery = req.query.query;
   console.log("searchQuery =", searchQuery);
-  if(!searchQuery || searchQuery.trim() === "") {
-    return res.status(400).json({ error: "Truy vấn tìm kiếm không được để trống." });
+  if (!searchQuery || searchQuery.trim() === "") {
+    return res
+      .status(400)
+      .json({ error: "Truy vấn tìm kiếm không được để trống." });
   }
   try {
     // Tìm kiếm khóa học theo tên hoặc mô tả
@@ -67,12 +69,12 @@ const getCourseWithSearch = async (req, res) => {
 
     if (courseError) {
       console.error("Lỗi khi tìm kiếm khóa học:", courseError.message);
-      return res
-        .status(500)
-        .json({ error: "Không thể tìm kiếm khóa học." });
+      return res.status(500).json({ error: "Không thể tìm kiếm khóa học." });
     }
 
-    console.log(`Tìm thấy ${courses.length} khóa học cho truy vấn: ${searchQuery}`);
+    console.log(
+      `Tìm thấy ${courses.length} khóa học cho truy vấn: ${searchQuery}`
+    );
 
     return res.status(200).json(courses);
   } catch (err) {
@@ -117,8 +119,6 @@ const getReviews = async (req, res) => {
 
 const getTeacherInfo = async (req, res) => {
   const userId = req.params.id;
-
-  console.log("user id = ", userId);
 
   try {
     // Lấy thông tin giảng viên
