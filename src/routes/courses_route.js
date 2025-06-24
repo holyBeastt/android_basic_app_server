@@ -14,4 +14,8 @@ router.get("/:id/reviews", courses_controller.getReviews);
 // Lấy thông tin giảng viên của khóa học
 router.get("/:id/gv-info", courses_controller.getTeacherInfo);
 
+// Lấy danh sách khóa học theo danh mục
+router.get("/category/:category", courses_controller.getCourseWithCategory);
+// Lấy danh sách khóa học theo từ khóa tìm kiếm
+router.get("/search", courses_controller.getCourseWithSearch);
 export default router;

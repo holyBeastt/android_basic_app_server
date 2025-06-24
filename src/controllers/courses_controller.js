@@ -19,7 +19,67 @@ const getTopCoursesList = async (req, res) => {
     res.status(500).json({ error: "Lỗi máy chủ" });
   }
 };
+const getCourseWithCategory = async (req, res) => {
+  const category = req.params.category;
+  console.log("category =============", category);
 
+  try {
+    // Chỉ select từ bảng courses, không join với bảng categories
+    const { data: courses, error: courseError } = await supabase
+      .from("courses")
+      .select("*") // Chỉ lấy từ bảng courses
+      .eq("category_name", category) // Lọc theo thuộc tính category_name
+      .order("created_at", { ascending: false }); // Sắp xếp theo thời gian tạo
+
+    if (courseError) {
+      console.error("Lỗi khi lấy khóa học:", courseError.message);
+      return res
+        .status(500)
+        .json({ error: "Không thể lấy thông tin khóa học." });
+    }
+
+    console.log(
+      `Tìm thấy ${courses.length} khóa học cho category: ${category}`
+    );
+
+    // Trả về array courses giống như getTopCoursesList
+    return res.status(200).json(courses);
+  } catch (err) {
+    console.error("Lỗi không xác định:", err);
+    return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
+  }
+};
+const getCourseWithSearch = async (req, res) => {
+  const searchQuery = req.query.query;
+  console.log("searchQuery =", searchQuery);
+  if(!searchQuery || searchQuery.trim() === "") {
+    return res.status(400).json({ error: "Truy vấn tìm kiếm không được để trống." });
+  }
+  try {
+    // Tìm kiếm khóa học theo tên hoặc mô tả
+    const { data: courses, error: courseError } = await supabase
+      .from("courses")
+      .select("*")
+      .or(
+        `title.ilike.%${searchQuery}%,subtitle.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`
+      )
+      .order("created_at", { ascending: false });
+
+    if (courseError) {
+      console.error("Lỗi khi tìm kiếm khóa học:", courseError.message);
+      return res
+        .status(500)
+        .json({ error: "Không thể tìm kiếm khóa học." });
+    }
+
+    console.log(`Tìm thấy ${courses.length} khóa học cho truy vấn: ${searchQuery}`);
+
+    return res.status(200).json(courses);
+  } catch (err) {
+    console.error("Lỗi không xác định:", err);
+    return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
+  }
+};
 const getCourseSectionsWithLessons = async (req, res) => {
   const courseId = req.params.id;
 
@@ -101,6 +161,8 @@ const getTeacherInfo = async (req, res) => {
 export default {
   getTopCoursesList,
   getCourseSectionsWithLessons,
+  getCourseWithCategory,
+  getCourseWithSearch,
   getReviews,
   getTeacherInfo,
 };
