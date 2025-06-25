@@ -54,4 +54,4 @@
 Khi tải video bài học lên Supabase, đặt tên theo định dạng sau để dễ quản lý:
 - Tên: course*${course_id}; section*${section_id}; lesson_${lesson_id};
 - `thumnail_url` - ảnh khóa học : Lưu ở trong course_${course_id} với tên `thumnail_url`;
-`preview_video_url` - đường dẫn video xem trước của khóa học : Lưu ở trong course_${course_id} với tên `preview_video_url`
+- `preview_video_url` - đường dẫn video xem trước của khóa học : Lưu ở trong course_${course_id} với tên `preview_video_url`
