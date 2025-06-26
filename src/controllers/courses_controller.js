@@ -30,7 +30,7 @@ const getCourseWithCategory = async (req, res) => {
       .select("*") // Chỉ lấy từ bảng courses
       .eq("category_name", category) // Lọc theo thuộc tính category_name
       .order("created_at", { ascending: false }); // Sắp xếp theo thời gian tạo
-
+console.log("courses =============", courses);
     if (courseError) {
       console.error("Lỗi khi lấy khóa học:", courseError.message);
       return res
@@ -66,7 +66,7 @@ const getCourseWithSearch = async (req, res) => {
         `title.ilike.%${searchQuery}%,subtitle.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`
       )
       .order("created_at", { ascending: false });
-
+console.log("courses ======", courses);
     if (courseError) {
       console.error("Lỗi khi tìm kiếm khóa học:", courseError.message);
       return res.status(500).json({ error: "Không thể tìm kiếm khóa học." });
