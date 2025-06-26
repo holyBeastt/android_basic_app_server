@@ -17,7 +17,9 @@ import user_routes from "./routes/users_route.js";
 import personal_courses_routes from "./routes/personal_courses_route.js";
 
 import quiz_routes from "./routes/quiz_route.js";
+import enrollment_routes from "./routes/enrollment_route.js";
 // Sử dụng Routes
+app.use("/api/enrollments", enrollment_routes);
 app.use("/api/auth", auth_routes);
 app.use("/api/courses", courses_routes);
 app.use("/api/users", user_routes);

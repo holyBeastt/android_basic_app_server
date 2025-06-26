@@ -186,7 +186,6 @@ const getTeacherInfo = async (req, res) => {
     return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
   }
 };
-
 export default {
   getTopCoursesList,
   getCourseSectionsWithLessons,
