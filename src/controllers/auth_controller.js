@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 
 const login = async (req, res) => {
   const { username, password } = req.body;
+  console.log("Debug Login :", username, password);
 
   const { data: user, error } = await supabase
     .from("users")
@@ -29,9 +30,14 @@ const login = async (req, res) => {
     expiresIn: "1d",
   });
 
+  // Tạo message dựa trên loại tài khoản
+  const loginMessage = user.is_instructor 
+    ? "Đăng nhập thành công với tư cách giảng viên" 
+    : "Đăng nhập thành công với tư cách học viên";
+
   return res.status(200).json({
-    message: "Đăng nhập thành công",
-    user: { id: user.id, username: user.username },
+    message: loginMessage,
+    user: { id: user.id, username: user.username, is_instructor:  user.is_instructor },
     token,
   });
 };

@@ -1,10 +1,20 @@
 import express from "express";
+import cors from "cors";
 import "dotenv/config";
 
 const port = process.env.PORT || 3000;
-const hostname = process.env.HOST_NAME || localhost;
+const hostname = process.env.HOST_NAME || "localhost";
 
 const app = express();
+
+// Configure CORS
+app.use(cors({
+  origin: ['http://localhost:8888'], // Add your frontend URLs
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
 app.use(express.json());
 
 // Lấy Routes
