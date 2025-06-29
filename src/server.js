@@ -8,12 +8,14 @@ const hostname = process.env.HOST_NAME || "localhost";
 const app = express();
 
 // Configure CORS
-app.use(cors({
-  origin: ['http://localhost:8888'], // Add your frontend URLs
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+app.use(
+  cors({
+    origin: ["http://localhost:8888"], // Add your frontend URLs
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+  })
+);
 
 app.use(express.json());
 
@@ -28,6 +30,7 @@ import personal_courses_routes from "./routes/personal_courses_route.js";
 
 import quiz_routes from "./routes/quiz_route.js";
 import enrollment_routes from "./routes/enrollment_route.js";
+import progress_routes from "./routes/progress_route.js";
 
 import instructorNestedRoutes from "./routes/instructor/instructorRoutes.js";
 
@@ -39,6 +42,7 @@ app.use("/api/users", user_routes);
 app.use("/api/instructor", instructorNestedRoutes);
 app.use("/", personal_courses_routes);
 app.use("/", quiz_routes);
+app.use("/", progress_routes);
 app.listen(port, hostname, () => {
   console.log(`Server running on http://${hostname}:${port}`);
 });
