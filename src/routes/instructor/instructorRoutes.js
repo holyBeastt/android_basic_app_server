@@ -7,6 +7,7 @@ import sectionController from "../../controllers/instructor_controllers/sectionC
 import lessonController from "../../controllers/instructor_controllers/lessonController.js";
 import quizController from "../../controllers/instructor_controllers/quizController.js";
 import questionController from "../../controllers/instructor_controllers/questionController.js";
+import lessonCheckpointController from "../../controllers/instructor_controllers/lessonCheckpointController.js";
 
 const router = express.Router();
 
@@ -39,6 +40,12 @@ router.delete("/quizzes/:quizId", quizController.remove);
 router.post("/quizzes/:quizId/questions", questionController.create);
 router.put("/questions/:questionId", questionController.update);
 router.delete("/questions/:questionId", questionController.remove);
+
+// Lesson Checkpoint routes
+router.get("/lesson-checkpoints", lessonCheckpointController.getCheckpointsByLesson);
+router.post("/lesson-checkpoints", lessonCheckpointController.createCheckpoint);
+router.put("/lesson-checkpoints/:id", lessonCheckpointController.updateCheckpoint);
+router.delete("/lesson-checkpoints/:id", lessonCheckpointController.deleteCheckpoint);
 
 // ========================================
 // REACT-ADMIN COMPATIBLE ROUTES
