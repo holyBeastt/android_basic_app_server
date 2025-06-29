@@ -1,8 +1,24 @@
 import supabase from "../config/supabase.js";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken"; // Nếu dùng jwt cũng phải import như thế này
+import jwt from "jsonwebtoken";
+import path from "path";
 
-// ...phần code còn lại...
+// Helper upload avatar to Supabase
+async function uploadAvatarToSupabase(file, userId) {
+  if (!file) return null;
+  const ext = path.extname(file.originalname);
+  const fileName = `avatars/${userId}_${Date.now()}${ext}`;
+  const { data, error } = await supabase.storage
+    .from("images")
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: true,
+    });
+  if (error) throw new Error("Lỗi upload avatar: " + error.message);
+  const { data: publicUrlData } = supabase.storage.from("images").getPublicUrl(fileName);
+  return publicUrlData?.publicUrl || null;
+}
+
 const getUserInfo = async (req, res) => {
   try {
     // Lấy userId từ params hoặc body (tùy bạn truyền kiểu nào)
@@ -28,7 +44,7 @@ console.log("Data:", data);
 };
 const updateUserInfo = async (req, res) => {
   const { userId } = req.params;
-  const { username, oldPassword, password, bio, sex, avatar_url } = req.body;
+  const { username, oldPassword, password, bio, sex } = req.body;
   console.log(req.body);
   try {
     // 1. Lấy user hiện tại từ Supabase
@@ -61,8 +77,18 @@ const updateUserInfo = async (req, res) => {
       username_acc: username,
       bio: bio,
       sex: sex,
-      avatar_url: avatar_url,
     };
+    // Nếu có file avatar upload
+    if (req.file) {
+      try {
+        const url = await uploadAvatarToSupabase(req.file, userId);
+        updateFields.avatar_url = url;
+      } catch (e) {
+        return res.status(400).json({ error: e.message });
+      }
+    } else if (req.body.avatar_url) {
+      updateFields.avatar_url = req.body.avatar_url;
+    }
 
     if (hashedPassword) {
       updateFields.password = hashedPassword;
