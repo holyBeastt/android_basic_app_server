@@ -12,7 +12,6 @@ const getTopCoursesList = async (req, res) => {
       console.error("Lỗi Supabase:", error);
       return res.status(500).json({ error: error.message });
     }
-console.log("data =============", data);
     return res.status(200).json(data);
   } catch (err) {
     console.error("Lỗi server:", err);
@@ -186,7 +185,6 @@ const getTeacherInfo = async (req, res) => {
     return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
   }
 };
-
 export default {
   getTopCoursesList,
   getCourseSectionsWithLessons,
