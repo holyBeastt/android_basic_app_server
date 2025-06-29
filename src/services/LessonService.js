@@ -27,6 +27,11 @@ class LessonService {
         throw new Error("Bạn không có quyền truy cập section này");
       }
 
+      // Handle video field: nếu có video_url thì đổi thành content_url
+      if (lessonData.video_url) {
+        lessonData.content_url = lessonData.video_url;
+        delete lessonData.video_url;
+      }
       const { data: lesson, error } = await supabase
         .from("lessons")
         .insert([{
@@ -70,6 +75,15 @@ class LessonService {
       if (checkError || !lesson) {
         throw new Error("Không tìm thấy lesson hoặc bạn không có quyền sửa");
       }
+
+      // Không xử lý file video ở đây, chỉ nhận content_url là URL từ controller
+      // Debug: log updateData để kiểm tra dữ liệu gửi lên
+      console.log("[LessonService.update] updateData:", updateData);
+      // Xóa các trường không hợp lệ trước khi update
+      Object.keys(updateData).forEach(
+        key => (updateData[key] === undefined || updateData[key] === "undefined" || typeof updateData[key] === "object") && delete updateData[key]
+      );
+      console.log("[LessonService.update] updateData after clean:", updateData);
 
       const { data: updatedLesson, error } = await supabase
         .from("lessons")
