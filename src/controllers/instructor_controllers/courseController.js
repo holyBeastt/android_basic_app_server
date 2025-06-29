@@ -1,5 +1,8 @@
 // controllers/instructor_controllers/courseController.js
 import CourseService from "../../services/CourseService.js";
+import supabase from "../../config/supabase.js";
+import multer from "multer";
+import path from "path";
 
 const list = async (req, res) => {
   try {
@@ -74,59 +77,133 @@ const getOne = async (req, res) => {
   }
 };
 
-const create = async (req, res) => {
-  try {
-    const instructorId = req.user?.id || req.params.instructorId;
-    
-    if (!instructorId) {
-      return res.status(401).json({ error: "Unauthorized" });
+// Multer setup for image & video upload
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage,
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200MB limit
+  fileFilter: (req, file, cb) => {
+    if (
+      file.mimetype.startsWith("image/") ||
+      file.mimetype.startsWith("video/")
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only image and video files are allowed!"));
     }
+  },
+});
 
-    const courseData = req.body;
+// Helper to upload file to Supabase Storage
+async function uploadFileToSupabase(file, instructorId, type = "other") {
+  if (!file) return null;
+  const ext = path.extname(file.originalname);
+  let folder =
+    type === "image"
+      ? "course_thumbnails"
+      : type === "video"
+      ? "course_demo_videos"
+      : type === "preview"
+      ? "course_preview_videos"
+      : "other";
+  const fileName = `${folder}/${instructorId}_${Date.now()}${ext}`;
+  const { data, error } = await supabase.storage
+    .from("images") // đổi từ 'media' sang 'images'
+    .upload(fileName, file.buffer, {
+      contentType: file.mimetype,
+      upsert: true,
+    });
+  if (error) throw new Error("Lỗi upload file: " + error.message);
+  const { data: publicUrlData } = supabase.storage.from("images").getPublicUrl(fileName);
+  return publicUrlData?.publicUrl || null;
+}
 
-    // Validate required fields
-    if (!courseData.title || !courseData.description) {
-      return res.status(400).json({ 
-        error: "Thiếu thông tin bắt buộc: title, description" 
-      });
+// Wrap create with multer middleware
+const create = [
+  upload.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "demo_video", maxCount: 1 },
+    { name: "preview_video", maxCount: 1 }, // thêm preview_video
+  ]),
+  async (req, res) => {
+    try {
+      const instructorId = req.user?.id || req.params.instructorId;
+      if (!instructorId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const courseData = req.body;
+      // Validate required fields
+      if (!courseData.title || !courseData.description) {
+        return res.status(400).json({ error: "Thiếu thông tin bắt buộc: title, description" });
+      }
+      // Handle thumbnail upload
+      if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+        const url = await uploadFileToSupabase(req.files.thumbnail[0], instructorId, "image");
+        courseData.thumbnail_url = url;
+      }
+      // Handle demo video upload
+      if (req.files && req.files.demo_video && req.files.demo_video[0]) {
+        const url = await uploadFileToSupabase(req.files.demo_video[0], instructorId, "video");
+        courseData.demo_video_url = url;
+      }
+      // Handle preview video upload
+      if (req.files && req.files.preview_video && req.files.preview_video[0]) {
+        const url = await uploadFileToSupabase(req.files.preview_video[0], instructorId, "preview");
+        courseData.preview_video_url = url;
+      }
+      const result = await CourseService.createSimple(instructorId, courseData);
+      return res.status(201).json(result);
+    } catch (error) {
+      console.error("CourseController.create error:", error);
+      return res.status(500).json({ error: error.message || "Đã xảy ra lỗi máy chủ" });
     }
-
-    // Only create basic course data - other content will be added via update API
-    // This ensures clean separation: CREATE for course, UPDATE for sections/lessons/quizzes
-    const result = await CourseService.createSimple(instructorId, courseData);
-    return res.status(201).json(result);
-  } catch (error) {
-    console.error("CourseController.create error:", error);
-    return res.status(500).json({ error: error.message || "Đã xảy ra lỗi máy chủ" });
   }
-};
+];
 
-const update = async (req, res) => {
-  try {
-    const instructorId = req.user?.id || req.params.instructorId;
-    const { courseId } = req.params;
-    
-    if (!instructorId) {
-      return res.status(401).json({ error: "Unauthorized" });
+// Wrap update with multer middleware
+const update = [
+  upload.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "demo_video", maxCount: 1 },
+    { name: "preview_video", maxCount: 1 }, // thêm preview_video
+  ]),
+  async (req, res) => {
+    try {
+      const instructorId = req.user?.id || req.params.instructorId;
+      const { courseId } = req.params;
+      if (!instructorId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const updateData = req.body;
+      delete updateData.id;
+      delete updateData.user_id;
+      delete updateData.created_at;
+      // Handle thumbnail upload
+      if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
+        const url = await uploadFileToSupabase(req.files.thumbnail[0], instructorId, "image");
+        updateData.thumbnail_url = url;
+      }
+      // Handle demo video upload
+      if (req.files && req.files.demo_video && req.files.demo_video[0]) {
+        const url = await uploadFileToSupabase(req.files.demo_video[0], instructorId, "video");
+        updateData.demo_video_url = url;
+      }
+      // Handle preview video upload
+      if (req.files && req.files.preview_video && req.files.preview_video[0]) {
+        const url = await uploadFileToSupabase(req.files.preview_video[0], instructorId, "preview");
+        updateData.preview_video_url = url;
+      }
+      const result = await CourseService.updateNested(courseId, instructorId, updateData);
+      return res.status(200).json(result);
+    } catch (error) {
+      console.error("CourseController.update error:", error);
+      if (error.message.includes("Không tìm thấy")) {
+        return res.status(404).json({ error: error.message });
+      }
+      return res.status(500).json({ error: error.message || "Đã xảy ra lỗi máy chủ" });
     }
-
-    const updateData = req.body;
-    
-    // Remove fields that shouldn't be updated directly
-    delete updateData.id;
-    delete updateData.user_id;
-    delete updateData.created_at;
-
-    const result = await CourseService.updateNested(courseId, instructorId, updateData);
-    return res.status(200).json(result);
-  } catch (error) {
-    console.error("CourseController.update error:", error);
-    if (error.message.includes("Không tìm thấy")) {
-      return res.status(404).json({ error: error.message });
-    }
-    return res.status(500).json({ error: error.message || "Đã xảy ra lỗi máy chủ" });
   }
-};
+];
 
 const remove = async (req, res) => {
   try {
@@ -151,7 +228,7 @@ const remove = async (req, res) => {
 export default {
   list,
   getOne,
-  create,
-  update,
+  create, // now is an array with multer middleware
+  update, // now is an array with multer middleware
   remove
 };
