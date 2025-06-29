@@ -74,7 +74,7 @@ const updateUserInfo = async (req, res) => {
 
     // 3. Tạo object cập nhật
     const updateFields = {
-      username_acc: username,
+      username: username,
       bio: bio,
       sex: sex,
     };
