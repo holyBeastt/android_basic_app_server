@@ -2,8 +2,8 @@
 import supabase from "../config/supabase.js";
 
 const saveProgress = async (req, res) => {
-  const { lessonId, seconds } = req.body;
-  const userId = req.user?.userId || 1; // Giả định userId = 1 nếu chưa có auth
+  const { lessonId, seconds, userId } = req.body;
+  // const userId = req.user?.userId || 1; // Giả định userId = 1 nếu chưa có auth
 
   if (!lessonId || seconds == null) {
     return res.status(400).json({ error: "Thiếu dữ liệu" });
@@ -43,29 +43,30 @@ const saveProgress = async (req, res) => {
 };
 
 const markCompleted = async (req, res) => {
-  const { lessonId } = req.body;
-  const userId = req.user?.userId || 1;
+  const { lessonId, userId } = req.body;
+  // const userId = req.user?.userId;
 
-  if (!lessonId) {
-    return res.status(400).json({ error: "Thiếu lessonId" });
-  }
+  if (!lessonId) return res.status(400).json({ error: "Thiếu lessonId" });
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const { error } = await supabase
-      .from("progress")
-      .update({
+    // Upsert bảo đảm luôn có bản ghi
+    const { error } = await supabase.from("progress").upsert(
+      {
+        user_id: userId,
+        lesson_id: lessonId,
         is_completed: true,
-        // completed_at: new Date().toISOString(),
         progress_percentage: 100,
-      })
-      .eq("user_id", userId)
-      .eq("lesson_id", lessonId);
+        // completed_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,lesson_id" }
+    );
 
     if (error) throw error;
 
     return res.json({ success: true });
-  } catch (error) {
-    console.error("markCompleted error:", error);
+  } catch (err) {
+    console.error("markCompleted error:", err);
     return res.status(500).json({ error: "Lỗi máy chủ" });
   }
 };
@@ -105,6 +106,7 @@ const getProgress = async (req, res) => {
   const userId = Number(req.headers["user-id"]); // lấy từ header
 
   if (!lessonId || !userId) {
+    console.error("Missing lessonId or userId", { lessonId, userId });
     return res.status(400).json({ error: "Thiếu lessonId hoặc userId" });
   }
 
