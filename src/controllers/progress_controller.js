@@ -135,9 +135,35 @@ const getProgress = async (req, res) => {
   }
 };
 
+const getAllProgressForUser = async (req, res) => {
+  const userId = Number(req.params.userId);
+  if (!userId) return res.status(400).json({ error: "Thiếu userId" });
+
+  try {
+    const { data, error } = await supabase
+      .from("progress")
+      .select("lesson_id, is_completed")
+      .eq("user_id", userId);
+
+    if (error) throw error;
+
+    // Trả về dạng map để dễ dùng bên frontend
+    const progressMap = {};
+    data.forEach((p) => {
+      progressMap[p.lesson_id] = p.is_completed;
+    });
+
+    return res.json(progressMap); // { 1: true, 2: false, ... }
+  } catch (err) {
+    console.error("getAllProgressForUser error:", err);
+    return res.status(500).json({ error: "Lỗi máy chủ" });
+  }
+};
+
 export default {
   saveProgress,
   markCompleted,
   fetchCourseProgress,
   getProgress,
+  getAllProgressForUser,
 };

@@ -12,4 +12,9 @@ router.post("/api/v1/progress/complete", progressController.markCompleted);
 // );
 router.get("/api/v1/progress/:lessonId", progressController.getProgress);
 
+router.get(
+  "/api/v1/progress-all/user/:userId",
+  progressController.getAllProgressForUser
+);
+
 export default router;
