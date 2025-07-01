@@ -12,13 +12,13 @@ const saveProgress = async (req, res) => {
   try {
     const { data: lesson, error: errLesson } = await supabase
       .from("lessons")
-      .select("duration_sec")
+      .select("duration")
       .eq("id", lessonId)
       .single();
 
     if (errLesson) throw errLesson;
 
-    const duration = lesson?.duration_sec || 0;
+    const duration = lesson?.duration || 0;
     const percent =
       duration > 0 ? Math.min((seconds / duration) * 100, 100) : 0;
 
@@ -26,8 +26,8 @@ const saveProgress = async (req, res) => {
       {
         user_id: userId,
         lesson_id: lessonId,
-        last_watched: seconds,
-        progress_percent: percent,
+        last_watched_position: seconds,
+        progress_percentage: percent,
         last_accessed: new Date().toISOString(),
       },
       { onConflict: "user_id,lesson_id" }
@@ -55,8 +55,8 @@ const markCompleted = async (req, res) => {
       .from("progress")
       .update({
         is_completed: true,
-        completed_at: new Date().toISOString(),
-        progress_percent: 100,
+        // completed_at: new Date().toISOString(),
+        progress_percentage: 100,
       })
       .eq("user_id", userId)
       .eq("lesson_id", lessonId);
@@ -99,8 +99,43 @@ const fetchCourseProgress = async (req, res) => {
   }
 };
 
+const getProgress = async (req, res) => {
+  console.log("getProgress called");
+  const lessonId = Number(req.params.lessonId); // ép kiểu số
+  const userId = Number(req.headers["user-id"]); // lấy từ header
+
+  if (!lessonId || !userId) {
+    return res.status(400).json({ error: "Thiếu lessonId hoặc userId" });
+  }
+
+  console.log("params:", { lessonId, userId });
+
+  try {
+    const { data, error } = await supabase
+      .from("progress")
+      .select("last_watched_position")
+      .eq("user_id", userId)
+      .eq("lesson_id", lessonId)
+      .single();
+
+    if (error) throw error; // thường chỉ vào đây khi lỗi hệ thống
+
+    if (!data) {
+      return res.status(404).json({ message: "Not found" });
+    }
+
+    console.log("getProgress data:", data);
+
+    return res.json({ seconds: data.last_watched_position ?? 0 });
+  } catch (err) {
+    console.error("getProgress error:", err);
+    return res.status(500).json({ error: "Lỗi máy chủ" });
+  }
+};
+
 export default {
   saveProgress,
   markCompleted,
   fetchCourseProgress,
+  getProgress,
 };
