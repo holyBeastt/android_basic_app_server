@@ -225,10 +225,27 @@ const remove = async (req, res) => {
   }
 };
 
+const getRevenueStats = async (req, res) => {
+  try {
+    const instructorId = req.user?.id || req.params.instructorId;
+    
+    if (!instructorId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const result = await CourseService.getRevenueStats(instructorId);
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error("CourseController.getRevenueStats error:", error);
+    return res.status(500).json({ error: error.message || "Đã xảy ra lỗi máy chủ" });
+  }
+};
+
 export default {
   list,
   getOne,
   create, // now is an array with multer middleware
   update, // now is an array with multer middleware
-  remove
+  remove,
+  getRevenueStats
 };

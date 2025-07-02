@@ -16,6 +16,7 @@ router.use(process.env.NODE_ENV === 'test' ? simpleTestAuth : simpleTestAuth);
 
 // Course routes
 router.get("/courses", courseController.list);
+router.get("/courses/revenue-stats", courseController.getRevenueStats);
 router.get("/courses/:courseId", courseController.getOne);
 router.post("/courses", courseController.create);
 router.put("/courses/:courseId", courseController.update);

@@ -36,6 +36,41 @@ const enrollCourse = async (req, res) => {
       return res.status(500).json({ error: "Không thể đăng ký khóa học." });
     }
 
+    // Tăng student_count trong bảng courses
+    const { data: courseData, error: getCourseError } = await supabase
+      .from("courses")
+      .select("student_count")
+      .eq("id", courseId)
+      .single();
+
+    if (getCourseError) {
+      console.error("Lỗi khi lấy thông tin khóa học:", getCourseError.message);
+      // Rollback enrollment nếu không thể lấy thông tin khóa học
+      await supabase
+        .from("enrollments")
+        .delete()
+        .eq("course_id", courseId)
+        .eq("user_id", userId);
+      return res.status(500).json({ error: "Không thể lấy thông tin khóa học." });
+    }
+
+    const currentStudentCount = courseData.student_count || 0;
+    const { error: updateError } = await supabase
+      .from("courses")
+      .update({ student_count: currentStudentCount + 1 })
+      .eq("id", courseId);
+
+    if (updateError) {
+      console.error("Lỗi khi cập nhật student_count:", updateError.message);
+      // Rollback enrollment nếu không thể cập nhật student_count
+      await supabase
+        .from("enrollments")
+        .delete()
+        .eq("course_id", courseId)
+        .eq("user_id", userId);
+      return res.status(500).json({ error: "Không thể cập nhật số lượng sinh viên." });
+    }
+
     return res.status(200).json({ message: "Đăng ký thành công!", enrollment: data });
   } catch (err) {
     console.error("Lỗi không xác định:", err);

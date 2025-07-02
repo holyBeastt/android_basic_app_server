@@ -135,6 +135,7 @@ class CourseService {
     try {
       // Only create basic course data, no nested structures
       const courseToCreate = {
+        user_name: courseData.username || null,
         title: courseData.title,
         subtitle: courseData.subtitle || null,
         description: courseData.description,
@@ -469,6 +470,79 @@ class CourseService {
       return await this.getOne(courseId, instructorId);
     } catch (error) {
       console.error("CourseService.updateNested error:", error);
+      throw error;
+    }
+  }
+
+  async getRevenueStats(instructorId) {
+    try {
+      // Lấy thông tin tổng quan khóa học của giảng viên
+      const { data: courses, error: coursesError } = await supabase
+        .from("courses")
+        .select(`
+          id,
+          title,
+          user_name,
+          price,
+          discount_price,
+          student_count,
+          created_at
+        `)
+        .eq("user_id", instructorId);
+
+      if (coursesError) {
+        throw new Error(`Lỗi khi lấy danh sách khóa học: ${coursesError.message}`);
+      }
+
+      if (!courses || courses.length === 0) {
+        return {
+          data: {
+            totalRevenue: 0,
+            totalStudents: 0,
+            totalCourses: 0,
+            courses: [],
+            instructorName: null
+          }
+        };
+      }
+
+      // Tính toán tổng doanh thu và tổng học viên
+      let totalRevenue = 0;
+      let totalStudents = 0;
+      const instructorName = courses[0].user_name;
+
+      const courseStats = courses.map(course => {
+        // Sử dụng giá giảm nếu có, nếu không dùng giá gốc
+        const effectivePrice = course.discount_price || course.price || 0;
+        const studentCount = course.student_count || 0;
+        const courseRevenue = effectivePrice * studentCount;
+        
+        totalRevenue += courseRevenue;
+        totalStudents += studentCount;
+
+        return {
+          id: course.id,
+          title: course.title,
+          price: course.price,
+          discount_price: course.discount_price,
+          effective_price: effectivePrice,
+          student_count: studentCount,
+          course_revenue: courseRevenue,
+          created_at: course.created_at
+        };
+      });
+
+      return {
+        data: {
+          totalRevenue,
+          totalStudents,
+          totalCourses: courses.length,
+          instructorName,
+          courses: courseStats
+        }
+      };
+    } catch (error) {
+      console.error("CourseService.getRevenueStats error:", error);
       throw error;
     }
   }
