@@ -8,15 +8,15 @@ const hostname = process.env.HOST_NAME || "localhost";
 const app = express();
 
 // Configure CORS
-app.use(
-  cors({
-    origin: ["http://localhost:8888"], // Add your frontend URLs
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  })
-);
-
+// app.use(
+//   cors({
+//     origin: ["http://localhost:8888"], // Add your frontend URLs
+//     credentials: true,
+//     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+//     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+//   })
+// );
+app.use(cors());
 app.use(express.json());
 
 // Lấy Routes
@@ -33,8 +33,9 @@ import enrollment_routes from "./routes/enrollment_route.js";
 import progress_routes from "./routes/progress_route.js";
 
 import instructorNestedRoutes from "./routes/instructor/instructorRoutes.js";
-
+import paymentMomoRoutes from "./routes/payment_route.js";
 // Sử dụng Routes
+app.use("/api/momo", paymentMomoRoutes);
 app.use("/api/enrollments", enrollment_routes);
 app.use("/api/auth", auth_routes);
 app.use("/api/courses", courses_routes);
