@@ -8,4 +8,6 @@ router.post("/create-payment", paymentMomoController.createMomoPayment);
 // Route nhận webhook MoMo
 router.post("/webhook", paymentMomoController.momoWebhook);
 
+router.get("/check-status", paymentMomoController.checkMomoStatus);
+
 export default router;

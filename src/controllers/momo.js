@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import axios from "axios";
 
+
 export async function createPayment({
   amount,
   orderId,
@@ -42,4 +43,5 @@ export async function createPayment({
     const { data } = await axios.post(endpoint, body);
     console.log("MoMo response:", data);
   return data; // data.payUrl là link web MoMo chứa mã QR
+  
 }
