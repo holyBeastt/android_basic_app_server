@@ -4,6 +4,8 @@ import axios from "axios";
 
 export async function createPayment({
   amount,
+  user_id,
+  course_id,
   orderId,
   orderInfo,
   returnUrl,
@@ -35,6 +37,8 @@ export async function createPayment({
     redirectUrl: returnUrl,
     ipnUrl: notifyUrl,
     extraData: "",
+    user_id,
+    course_id,
     requestType: "captureWallet",
     signature,
     lang: "vi",

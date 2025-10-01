@@ -18,6 +18,8 @@ const paymentMomoController = {
       const result = await createPayment({
         amount,
         orderId,
+        user_id,
+        course_id,
         orderInfo,
         returnUrl,
         notifyUrl,
@@ -36,6 +38,7 @@ const paymentMomoController = {
           // Thêm trường khác nếu cần
         },
       ]);
+
       if (error)
         return res.status(500).json({ success: false, error: error.message });
 
@@ -59,31 +62,56 @@ const paymentMomoController = {
       const { orderId, resultCode, message } = req.body;
       if (resultCode === 0 && orderId) {
         // Update trạng thái đơn hàng trên Supabase
-        await supabase
+        const { data, error } = await supabase
           .from("payments")
           .update({
             status: "PAID",
             paid_at: new Date().toISOString(),
             momo_message: message,
           })
-          .eq("order_id", orderId);
+          .eq("order_id", orderId)
+          .select();
+
+        console.log("Update result:", { data, error });
+
+        if (!data || data.length === 0) {
+          console.error("Không tìm thấy bản ghi để update!");
+        }
       }
+      console.log(
+        "Updated payment status to PAID for orderId=============:",
+        orderId
+      );
       res.json({ received: true });
     } catch (err) {
       res.status(500).json({ received: false, error: err.message });
     }
   },
-  checkMomoStatus : async (req, res) => {
+  checkMomoStatus: async (req, res) => {
     const { orderId } = req.query;
+    console.log("Check MoMo status for orderId:", orderId);
     if (!orderId)
       return res.status(400).json({ success: false, message: "Thiếu orderId" });
     const { data, error } = await supabase
       .from("payments")
       .select("status")
       .eq("order_id", orderId)
-      .single();
-    if (error) return res.status(500).json({ success: false, error: error.message });
+      .maybeSingle();
+
+    // ====> Viết log NGAY SAU truy vấn ở đây:
+    console.log(
+      "checkMomoStatus orderId:",
+      orderId,
+      "data:",
+      data,
+      "error:",
+      error
+    );
+
+    if (error)
+      return res.status(500).json({ success: false, error: error.message });
     if (data && data.status === "PAID") {
+      console.log("Payment status for orderId========", orderId, "is PAID");
       return res.json({ success: true, paid: true });
     }
     return res.json({ success: true, paid: false });
