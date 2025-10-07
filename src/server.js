@@ -3,7 +3,7 @@ import cors from "cors";
 import "dotenv/config";
 
 const port = process.env.PORT || 3000;
-const hostname = process.env.HOST_NAME || "localhost";
+const hostname = process.env.HOST_NAME || "0.0.0.0";
 
 const app = express();
 
