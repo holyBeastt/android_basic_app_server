@@ -122,7 +122,13 @@ const create = async (req, res) => {
     const instructorId = req.user?.id || req.params.instructorId;
     const { lessonId } = req.params;
     
+    console.log("📝 QuizController.create - Bắt đầu tạo quiz");
+    console.log("👤 Instructor ID:", instructorId);
+    console.log("📚 Lesson ID:", lessonId);
+    console.log("📋 Quiz Data:", JSON.stringify(req.body, null, 2));
+    
     if (!instructorId) {
+      console.log("❌ Unauthorized - Không có instructor ID");
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -130,15 +136,25 @@ const create = async (req, res) => {
 
     // Validate required fields
     if (!quizData.title) {
+      console.log("❌ Validation failed - Thiếu title");
       return res.status(400).json({ 
         error: "Thiếu thông tin bắt buộc: title" 
       });
     }
 
+    console.log("✅ Validation passed - Gọi QuizService.create");
     const result = await QuizService.create(lessonId, instructorId, quizData);
+    
+    console.log("🎉 Quiz created successfully:", {
+      quizId: result.data?.id,
+      title: result.data?.title,
+      lessonId: result.data?.lesson_id
+    });
+    
     return res.status(201).json(result);
   } catch (error) {
-    console.error("QuizController.create error:", error);
+    console.error("❌ QuizController.create error:", error);
+    console.error("📍 Error stack:", error.stack);
     if (error.message.includes("Không tìm thấy")) {
       return res.status(404).json({ error: error.message });
     }

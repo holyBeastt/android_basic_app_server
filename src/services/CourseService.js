@@ -133,26 +133,47 @@ class CourseService {
 
   async createSimple(instructorId, courseData) {
     try {
-      // Only create basic course data, no nested structures
+      // Đồng bộ tất cả trường với Supabase courses table
       const courseToCreate = {
-        user_name: courseData.username || null,
+        // Basic course info
         title: courseData.title,
         subtitle: courseData.subtitle || null,
         description: courseData.description,
         user_id: instructorId,
+        user_name: courseData.user_name || courseData.username || null,
+        
+        // Category
+        category_id: courseData.category_id || null,
+        category_name: courseData.category_name || null,
+        
+        // Media URLs
+        thumbnail_url: courseData.thumbnail_url || null,
+        preview_video_url: courseData.preview_video_url || courseData.video_url || null,
+        
+        // Pricing
         price: courseData.price ? parseFloat(courseData.price) : 0,
         discount_price: courseData.discount_price ? parseFloat(courseData.discount_price) : null,
-        level: courseData.level || "Beginner",
-        total_duration: courseData.duration || courseData.total_duration || 0,
+        discount_end_date: courseData.discount_end_date || null,
+        
+        // Course details
+        level: courseData.level || "beginner",
+        total_duration: courseData.total_duration || courseData.duration || null,
+        total_lessons: courseData.total_lessons || null,
+        
+        // Course content
         requirements: courseData.requirements ? 
-          (Array.isArray(courseData.requirements) ? courseData.requirements.join('\n') : courseData.requirements) : null,
+          (Array.isArray(courseData.requirements) ? courseData.requirements.join('\\n') : courseData.requirements) : null,
         what_you_learn: courseData.what_you_learn ? 
-          (Array.isArray(courseData.what_you_learn) ? courseData.what_you_learn.join('\n') : courseData.what_you_learn) : null,
+          (Array.isArray(courseData.what_you_learn) ? courseData.what_you_learn.join('\\n') : courseData.what_you_learn) : null,
+        
+        // Status flags
         is_published: courseData.is_published || false,
         is_featured: courseData.is_featured || false,
-        thumbnail_url: courseData.thumbnail_url || null,
-        preview_video_url: courseData.video_url || null,
-        category_id: courseData.category_id || null
+        
+        // Stats (will be auto-calculated by triggers/functions in DB)
+        rating: courseData.rating || null,
+        student_count: courseData.student_count || 0,
+        review_count: courseData.review_count || 0
       };
 
       const { data: course, error: courseError } = await supabase
@@ -290,13 +311,65 @@ class CourseService {
   async updateNested(courseId, instructorId, updateData) {
     try {
       // Start transaction-like operations
-      const { sections, ...courseFields } = updateData;
+      const { sections, ...rawCourseFields } = updateData;
+      
+      // Filter và validate course fields để đồng bộ với Supabase
+      const courseFields = {};
+      
+      // Basic course info
+      if (rawCourseFields.title !== undefined) courseFields.title = rawCourseFields.title;
+      if (rawCourseFields.subtitle !== undefined) courseFields.subtitle = rawCourseFields.subtitle;
+      if (rawCourseFields.description !== undefined) courseFields.description = rawCourseFields.description;
+      if (rawCourseFields.user_name !== undefined) courseFields.user_name = rawCourseFields.user_name;
+      
+      // Category
+      if (rawCourseFields.category_id !== undefined) courseFields.category_id = rawCourseFields.category_id;
+      if (rawCourseFields.category_name !== undefined) courseFields.category_name = rawCourseFields.category_name;
+      
+      // Media URLs
+      if (rawCourseFields.thumbnail_url !== undefined) courseFields.thumbnail_url = rawCourseFields.thumbnail_url;
+      if (rawCourseFields.preview_video_url !== undefined) courseFields.preview_video_url = rawCourseFields.preview_video_url;
+      
+      // Pricing
+      if (rawCourseFields.price !== undefined) courseFields.price = parseFloat(rawCourseFields.price) || 0;
+      if (rawCourseFields.discount_price !== undefined) courseFields.discount_price = rawCourseFields.discount_price ? parseFloat(rawCourseFields.discount_price) : null;
+      if (rawCourseFields.discount_end_date !== undefined) courseFields.discount_end_date = rawCourseFields.discount_end_date;
+      
+      // Course details
+      if (rawCourseFields.level !== undefined) courseFields.level = rawCourseFields.level;
+      if (rawCourseFields.total_duration !== undefined) courseFields.total_duration = rawCourseFields.total_duration;
+      if (rawCourseFields.total_lessons !== undefined) courseFields.total_lessons = rawCourseFields.total_lessons;
+      
+      // Course content
+      if (rawCourseFields.requirements !== undefined) {
+        courseFields.requirements = rawCourseFields.requirements ? 
+          (Array.isArray(rawCourseFields.requirements) ? rawCourseFields.requirements.join('\\n') : rawCourseFields.requirements) : null;
+      }
+      if (rawCourseFields.what_you_learn !== undefined) {
+        courseFields.what_you_learn = rawCourseFields.what_you_learn ? 
+          (Array.isArray(rawCourseFields.what_you_learn) ? rawCourseFields.what_you_learn.join('\\n') : rawCourseFields.what_you_learn) : null;
+      }
+      
+      // Status flags
+      if (rawCourseFields.is_published !== undefined) courseFields.is_published = rawCourseFields.is_published;
+      if (rawCourseFields.is_featured !== undefined) courseFields.is_featured = rawCourseFields.is_featured;
+      
+      // Stats (normally auto-calculated, but allow manual override)
+      if (rawCourseFields.rating !== undefined) courseFields.rating = rawCourseFields.rating;
+      if (rawCourseFields.student_count !== undefined) courseFields.student_count = rawCourseFields.student_count;
+      if (rawCourseFields.review_count !== undefined) courseFields.review_count = rawCourseFields.review_count;
       
       // Update course basic info
       if (Object.keys(courseFields).length > 0) {
+        // Format timestamp for PostgreSQL compatibility
+        const now = new Date().toISOString().replace('T', ' ').replace('Z', '+00');
+        
         const { error: courseError } = await supabase
           .from("courses")
-          .update(courseFields)
+          .update({
+            ...courseFields,
+            updated_at: now
+          })
           .eq("id", courseId)
           .eq("user_id", instructorId);
 

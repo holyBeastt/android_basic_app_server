@@ -120,10 +120,40 @@ const getProgress = async (req, res) => {
       .eq("lesson_id", lessonId)
       .single();
 
-    if (error) throw error; // thường chỉ vào đây khi lỗi hệ thống
+    // Handle case when no progress record exists (PGRST116)
+    if (error && error.code === 'PGRST116') {
+      console.log("📝 No progress record found, creating new one...");
+      
+      // Create new progress record
+      const { data: newProgress, error: createError } = await supabase
+        .from("progress")
+        .insert([{
+          user_id: userId,
+          lesson_id: lessonId,
+          last_watched_position: 0,
+          progress_percentage: 0,
+          is_completed: false
+        }])
+        .select("last_watched_position")
+        .single();
+        
+      if (createError) {
+        console.error("❌ Error creating progress record:", createError);
+        return res.json({ seconds: 0 }); // Fallback to default
+      }
+      
+      console.log("✅ Created new progress record:", newProgress);
+      return res.json({ seconds: newProgress.last_watched_position ?? 0 });
+    }
+
+    if (error) {
+      console.error("❌ Database error:", error);
+      throw error;
+    }
 
     if (!data) {
-      return res.status(404).json({ message: "Not found" });
+      console.log("📝 No data returned, returning default position 0");
+      return res.json({ seconds: 0 });
     }
 
     console.log("getProgress data:", data);

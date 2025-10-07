@@ -33,14 +33,70 @@ router.put("/lessons/:lessonId", lessonController.update);
 router.delete("/lessons/:lessonId", lessonController.remove);
 
 // Quiz routes
-router.post("/lessons/:lessonId/quizzes", quizController.create);
-router.put("/quizzes/:quizId", quizController.update);
-router.delete("/quizzes/:quizId", quizController.remove);
+router.post("/lessons/:lessonId/quizzes", (req, res, next) => {
+  console.log("🚀 POST /lessons/:lessonId/quizzes - Create Quiz Request");
+  console.log("📊 Request details:", {
+    lessonId: req.params.lessonId,
+    body: req.body,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, quizController.create);
+
+router.put("/quizzes/:quizId", (req, res, next) => {
+  console.log("🔄 PUT /quizzes/:quizId - Update Quiz Request");
+  console.log("📊 Request details:", {
+    quizId: req.params.quizId,
+    body: req.body,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, quizController.update);
+
+router.delete("/quizzes/:quizId", (req, res, next) => {
+  console.log("🗑️ DELETE /quizzes/:quizId - Delete Quiz Request");
+  console.log("📊 Request details:", {
+    quizId: req.params.quizId,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, quizController.remove);
 
 // Question routes
-router.post("/quizzes/:quizId/questions", questionController.create);
-router.put("/questions/:questionId", questionController.update);
-router.delete("/questions/:questionId", questionController.remove);
+router.post("/quizzes/:quizId/questions", (req, res, next) => {
+  console.log("❓ POST /quizzes/:quizId/questions - Create Question Request");
+  console.log("📊 Request details:", {
+    quizId: req.params.quizId,
+    body: req.body,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, questionController.create);
+
+router.put("/questions/:questionId", (req, res, next) => {
+  console.log("🔄 PUT /questions/:questionId - Update Question Request");
+  console.log("📊 Request details:", {
+    questionId: req.params.questionId,
+    body: req.body,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, questionController.update);
+
+router.delete("/questions/:questionId", (req, res, next) => {
+  console.log("🗑️ DELETE /questions/:questionId - Delete Question Request");
+  console.log("📊 Request details:", {
+    questionId: req.params.questionId,
+    user: req.user?.id || 'Unknown',
+    timestamp: new Date().toISOString()
+  });
+  next();
+}, questionController.remove);
 
 // Lesson Checkpoint routes
 router.get("/lesson-checkpoints", lessonCheckpointController.getCheckpointsByLesson);

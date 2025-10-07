@@ -10,4 +10,13 @@ router.get(
 );
 router.get("/api/v1/quiz/:quizId/questions", quizController.getQuizQuestions);
 
+// New API to check if quiz should be shown
+router.get(
+  "/api/v1/quiz/should-show/:lessonId/:userId",
+  quizController.shouldShowQuiz
+);
+
+// Diagnosis API to check quiz health
+router.get("/api/v1/quiz/:quizId/diagnose", quizController.diagnoseQuiz);
+
 export default router;

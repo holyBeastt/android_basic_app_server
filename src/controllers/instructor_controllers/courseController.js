@@ -123,7 +123,9 @@ const create = [
   upload.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "demo_video", maxCount: 1 },
-    { name: "preview_video", maxCount: 1 }, // thêm preview_video
+    { name: "preview_video", maxCount: 1 },
+    { name: "image", maxCount: 1 }, // thêm image nếu cần
+    { name: "video", maxCount: 1 }, // thêm video nếu cần
   ]),
   async (req, res) => {
     try {
@@ -141,15 +143,38 @@ const create = [
         const url = await uploadFileToSupabase(req.files.thumbnail[0], instructorId, "image");
         courseData.thumbnail_url = url;
       }
+      // Handle image upload (alternative to thumbnail)
+      if (req.files && req.files.image && req.files.image[0]) {
+        const url = await uploadFileToSupabase(req.files.image[0], instructorId, "image");
+        courseData.thumbnail_url = url;
+      }
       // Handle demo video upload
       if (req.files && req.files.demo_video && req.files.demo_video[0]) {
         const url = await uploadFileToSupabase(req.files.demo_video[0], instructorId, "video");
+        courseData.demo_video_url = url;
+      }
+      // Handle video upload (alternative to demo_video)
+      if (req.files && req.files.video && req.files.video[0]) {
+        const url = await uploadFileToSupabase(req.files.video[0], instructorId, "video");
         courseData.demo_video_url = url;
       }
       // Handle preview video upload
       if (req.files && req.files.preview_video && req.files.preview_video[0]) {
         const url = await uploadFileToSupabase(req.files.preview_video[0], instructorId, "preview");
         courseData.preview_video_url = url;
+      }
+
+      // Validate và sync data với Supabase fields
+      if (courseData.level) {
+        courseData.level = courseData.level.toLowerCase();
+      }
+
+      // Convert arrays to strings if needed
+      if (Array.isArray(courseData.requirements)) {
+        courseData.requirements = courseData.requirements.join('\\n');
+      }
+      if (Array.isArray(courseData.what_you_learn)) {
+        courseData.what_you_learn = courseData.what_you_learn.join('\\n');
       }
       const result = await CourseService.createSimple(instructorId, courseData);
       return res.status(201).json(result);
@@ -165,7 +190,9 @@ const update = [
   upload.fields([
     { name: "thumbnail", maxCount: 1 },
     { name: "demo_video", maxCount: 1 },
-    { name: "preview_video", maxCount: 1 }, // thêm preview_video
+    { name: "preview_video", maxCount: 1 },
+    { name: "image", maxCount: 1 }, // thêm image nếu cần
+    { name: "video", maxCount: 1 }, // thêm video nếu cần
   ]),
   async (req, res) => {
     try {
@@ -178,9 +205,15 @@ const update = [
       delete updateData.id;
       delete updateData.user_id;
       delete updateData.created_at;
+      
       // Handle thumbnail upload
       if (req.files && req.files.thumbnail && req.files.thumbnail[0]) {
         const url = await uploadFileToSupabase(req.files.thumbnail[0], instructorId, "image");
+        updateData.thumbnail_url = url;
+      }
+      // Handle image upload (alternative to thumbnail)
+      if (req.files && req.files.image && req.files.image[0]) {
+        const url = await uploadFileToSupabase(req.files.image[0], instructorId, "image");
         updateData.thumbnail_url = url;
       }
       // Handle demo video upload
@@ -188,10 +221,28 @@ const update = [
         const url = await uploadFileToSupabase(req.files.demo_video[0], instructorId, "video");
         updateData.demo_video_url = url;
       }
+      // Handle video upload (alternative to demo_video)
+      if (req.files && req.files.video && req.files.video[0]) {
+        const url = await uploadFileToSupabase(req.files.video[0], instructorId, "video");
+        updateData.demo_video_url = url;
+      }
       // Handle preview video upload
       if (req.files && req.files.preview_video && req.files.preview_video[0]) {
         const url = await uploadFileToSupabase(req.files.preview_video[0], instructorId, "preview");
         updateData.preview_video_url = url;
+      }
+
+      // Validate và sync data với Supabase fields
+      if (updateData.level) {
+        updateData.level = updateData.level.toLowerCase();
+      }
+
+      // Convert arrays to strings if needed
+      if (Array.isArray(updateData.requirements)) {
+        updateData.requirements = updateData.requirements.join('\\n');
+      }
+      if (Array.isArray(updateData.what_you_learn)) {
+        updateData.what_you_learn = updateData.what_you_learn.join('\\n');
       }
       const result = await CourseService.updateNested(courseId, instructorId, updateData);
       return res.status(200).json(result);
