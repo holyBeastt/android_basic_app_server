@@ -1,13 +1,16 @@
-// controllers/auth_controller.js
 import supabase from "../config/supabase.js";
 import bcrypt from "bcrypt";
-
+import { OAuth2Client } from 'google-auth-library';
 import jwt from "jsonwebtoken";
+
+// Config
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 
 const login = async (req, res) => {
   const { username, password } = req.body;
   const timestamp = new Date().toISOString();
-  
+
   console.log(`[${timestamp}] [LOGIN ATTEMPT] Username: ${username}`);
 
   const { data: user, error } = await supabase
@@ -35,15 +38,15 @@ const login = async (req, res) => {
   });
 
   // Tạo message dựa trên loại tài khoản
-  const loginMessage = user.is_instructor 
-    ? "Đăng nhập thành công với tư cách giảng viên" 
+  const loginMessage = user.is_instructor
+    ? "Đăng nhập thành công với tư cách giảng viên"
     : "Đăng nhập thành công với tư cách học viên";
 
   console.log(`[${timestamp}] [LOGIN SUCCESS] Username: ${username} - User ID: ${user.id} - Account type: ${user.is_instructor ? 'Instructor' : 'Student'}`);
 
   return res.status(200).json({
     message: loginMessage,
-    user: { id: user.id, username: user.username, is_instructor:  user.is_instructor },
+    user: { id: user.id, username: user.username, is_instructor: user.is_instructor },
     token,
   });
 };
@@ -51,7 +54,7 @@ const login = async (req, res) => {
 const register = async (req, res) => {
   const { username_acc, password, confirmPassword, username, sex } = req.body;
   const timestamp = new Date().toISOString();
-  
+
   console.log(`[${timestamp}] [REGISTER ATTEMPT] Username_acc: ${username_acc}`);
 
   // Kiểm tra các trường bắt buộc
@@ -84,8 +87,8 @@ const register = async (req, res) => {
   // Thêm vào bảng account
   const { data, error } = await supabase
     .from("users")
-    .insert([{ 
-      username_acc: username_acc, 
+    .insert([{
+      username_acc: username_acc,
       password: hashedPassword,
       username: username,
       sex: sex
@@ -110,7 +113,94 @@ const register = async (req, res) => {
   });
 };
 
+const googleLogin = async (req, res) => {
+  const timestamp = new Date().toISOString();
+
+  try {
+    const { idToken, email, displayName, photoUrl } = req.body;
+    console.log(`[${timestamp}] [GOOGLE LOGIN] Attempt: ${email}`);
+
+    // 1. Xác thực idToken với Google
+    const ticket = await client.verifyIdToken({
+      idToken: idToken,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+    const googleEmail = payload.email;
+
+    // Bảo mật: Validate email
+    if (email !== googleEmail) {
+      return res.status(400).json({ message: 'Token không hợp lệ' });
+    }
+
+    // 2. Kiểm tra user trong Supabase
+    // Lưu ý: Cần đảm bảo bảng 'users' có cột 'email' hoặc dùng 'username_acc' để lưu email
+    let { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', googleEmail) // Nên thêm cột email vào DB
+      .maybeSingle(); // Dùng maybeSingle an toàn hơn single (tránh lỗi nếu không tìm thấy)
+
+    // 3. Nếu chưa có user -> Tạo mới
+    if (!user) {
+      console.log(`[${timestamp}] [GOOGLE REGISTER] Creating new user for: ${googleEmail}`);
+
+      // Tạo username từ phần đầu email nếu chưa có
+      const generatedUsername = googleEmail.split('@')[0];
+
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
+        .insert([
+          {
+            // Mapping dữ liệu cho khớp với DB của bạn
+            username_acc: googleEmail, // Dùng email làm tên đăng nhập luôn cho user Google
+            username: displayName || generatedUsername,
+            email: googleEmail,        // Cần thêm cột này vào DB
+            avatar_url: photoUrl,      // Cần thêm cột này vào DB
+            // password: null,         // User Google không có pass
+            sex: 'other',              // Giá trị mặc định vì Google không trả về sex
+            is_instructor: false       // Mặc định là học viên
+          }
+        ])
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("Insert Error:", insertError);
+        throw insertError;
+      }
+      user = newUser;
+    }
+
+    // 4. Tạo JWT 
+    // SỬA LỖI: Đổi 'userId' thành 'id' để khớp với hàm login thường
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' } // Token Google cho sống lâu hơn chút cũng được
+    );
+
+    // 5. Trả về client
+    return res.status(200).json({
+      message: 'Đăng nhập Google thành công',
+      token: token,
+      user: {
+        id: user.id,
+        username: user.username,
+        is_instructor: user.is_instructor,
+        avatar: user.avatar_url
+      }
+    });
+
+  } catch (error) {
+    console.error(`[${timestamp}] [GOOGLE AUTH ERROR]:`, error);
+    return res.status(500).json({ message: 'Lỗi xác thực Google phía Server' });
+  }
+}
+
 export default {
   login,
   register,
+  googleLogin
 };
