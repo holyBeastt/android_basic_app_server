@@ -3,9 +3,6 @@ import bcrypt from "bcrypt";
 import { OAuth2Client } from 'google-auth-library';
 import jwt from "jsonwebtoken";
 
-// Config
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
 
 const login = async (req, res) => {
   const { username, password } = req.body;
@@ -113,6 +110,9 @@ const register = async (req, res) => {
   });
 };
 
+// Config
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
 const googleLogin = async (req, res) => {
   const timestamp = new Date().toISOString();
 
@@ -159,7 +159,7 @@ const googleLogin = async (req, res) => {
             email: googleEmail,        // Cần thêm cột này vào DB
             avatar_url: photoUrl,      // Cần thêm cột này vào DB
             // password: null,         // User Google không có pass
-            sex: 'other',              // Giá trị mặc định vì Google không trả về sex
+            sex: 'male',              // Giá trị mặc định vì Google không trả về sex
             is_instructor: false       // Mặc định là học viên
           }
         ])
