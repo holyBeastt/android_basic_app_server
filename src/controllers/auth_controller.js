@@ -2,192 +2,250 @@ import supabase from "../config/supabase.js";
 import bcrypt from "bcrypt";
 import { OAuth2Client } from 'google-auth-library';
 import jwt from "jsonwebtoken";
+// [QUAN TRỌNG] Import file crypto bạn đã tạo
+import { encryptData, decryptData } from "../utils/crypto.js";
 
+// Config Google Client
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
-const login = async (req, res) => {
-  const { username, password } = req.body;
-  const timestamp = new Date().toISOString();
+// Hàm helper để tạo bộ đôi token (Dùng chung cho cả Login thường và Google)
+// Hàm helper debug
+const generateTokens = async (user) => {
+  const accessToken = jwt.sign(
+    { id: user.id, role: user.is_instructor ? 'instructor' : 'user' },
+    process.env.JWT_SECRET,
+    { expiresIn: '1h' }
+  );
 
-  console.log(`[${timestamp}] [LOGIN ATTEMPT] Username: ${username}`);
+  const refreshToken = jwt.sign(
+    { id: user.id },
+    process.env.JWT_REFRESH_SECRET,
+    { expiresIn: '7d' } // Sửa thành 30d nếu muốn lâu hơn
+  );
 
-  const { data: user, error } = await supabase
-    .from("users")
-    .select("*")
-    .eq("username_acc", username)
-    .single();
+  // Hash refresh token
+  const salt = 10;
+  const hashedRefreshToken = await bcrypt.hash(refreshToken, salt);
 
-  if (!user || error) {
-    console.log(`[${timestamp}] [LOGIN FAILED] Username: ${username} - Reason: Username not found`);
-    return res.status(401).json({ error: "Tên đăng nhập không tồn tại." });
+  console.log(`[DEBUG] Đang lưu Hash vào DB cho User ID: ${user.id}`);
+  console.log(`[DEBUG] Hash length: ${hashedRefreshToken.length}`);
+
+  // Lưu vào DB và BẮT LỖI
+  const { data, error } = await supabase
+    .from('users')
+    .update({
+      refresh_token_hash: hashedRefreshToken,
+      last_login: new Date()
+    })
+    .eq('id', user.id)
+    .select(); // Thêm select() để xem nó có trả về dòng nào không
+
+  if (error) {
+    console.error("❌ LỖI NGHIÊM TRỌNG: Không lưu được Refresh Token vào DB!");
+    console.error("Chi tiết lỗi:", error);
+    // Gợi ý lỗi thường gặp
+    if (error.code === '42703') console.error("-> Gợi ý: Có thể bạn CHƯA TẠO CỘT 'refresh_token_hash' trong Supabase?");
+    if (error.code === '42501') console.error("-> Gợi ý: Lỗi quyền hạn (RLS). Hãy kiểm tra xem bạn có đang dùng SERVICE_ROLE_KEY không?");
+  } else {
+    console.log("✅ Đã lưu Refresh Token Hash thành công!");
   }
 
-  const isMatch = await bcrypt.compare(password, user.password);
-
-  if (!isMatch) {
-    console.log(`[${timestamp}] [LOGIN FAILED] Username: ${username} - Reason: Incorrect password`);
-    return res.status(401).json({ error: "Sai mật khẩu." });
-  }
-
-  const secret_key = process.env.JWT_SECRET;
-
-  const token = jwt.sign({ id: user.id, username: user.username }, secret_key, {
-    expiresIn: "1d",
-  });
-
-  // Tạo message dựa trên loại tài khoản
-  const loginMessage = user.is_instructor
-    ? "Đăng nhập thành công với tư cách giảng viên"
-    : "Đăng nhập thành công với tư cách học viên";
-
-  console.log(`[${timestamp}] [LOGIN SUCCESS] Username: ${username} - User ID: ${user.id} - Account type: ${user.is_instructor ? 'Instructor' : 'Student'}`);
-
-  return res.status(200).json({
-    message: loginMessage,
-    user: { id: user.id, username: user.username, is_instructor: user.is_instructor },
-    token,
-  });
+  return { accessToken, refreshToken };
 };
 
+
+// 1. ĐĂNG NHẬP THƯỜNG (Username/Password)
+const login = async (req, res) => {
+  const { username, password } = req.body; // username ở đây là username_acc (tài khoản đăng nhập)
+  const timestamp = new Date().toISOString();
+
+  try {
+    console.log(`[${timestamp}] [LOGIN ATTEMPT] Account: ${username}`);
+
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("username_acc", username)
+      .single();
+
+    if (!user || error) {
+      return res.status(401).json({ error: "Tên đăng nhập không tồn tại." });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({ error: "Sai mật khẩu." });
+    }
+
+    // [NEW] Tạo Access + Refresh Token (Thay vì chỉ 1 token như cũ)
+    const { accessToken, refreshToken } = await generateTokens(user);
+
+    // [NEW] Giải mã tên hiển thị để trả về Client
+    const decryptedDisplayName = user.username ? decryptData(user.username) : "User";
+
+    const loginMessage = user.is_instructor
+      ? "Đăng nhập thành công với tư cách giảng viên"
+      : "Đăng nhập thành công với tư cách học viên";
+
+    return res.status(200).json({
+      message: loginMessage,
+      user: {
+        id: user.id,
+        username: decryptedDisplayName, // Trả về tên thật (đã giải mã)
+        is_instructor: user.is_instructor,
+        avatar: user.avatar_url
+      },
+      accessToken,   // Client lưu RAM/Header
+      refreshToken,  // Client lưu Cookie/LocalStorage
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Lỗi hệ thống khi đăng nhập" });
+  }
+};
+
+// 2. ĐĂNG KÝ THƯỜNG
 const register = async (req, res) => {
   const { username_acc, password, confirmPassword, username, sex } = req.body;
   const timestamp = new Date().toISOString();
 
-  console.log(`[${timestamp}] [REGISTER ATTEMPT] Username_acc: ${username_acc}`);
-
-  // Kiểm tra các trường bắt buộc
+  // Validate cơ bản...
   if (!username_acc || !password || !username || !sex) {
-    console.log(`[${timestamp}] [REGISTER FAILED] Username_acc: ${username_acc} - Reason: Missing required fields`);
-    return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin bắt buộc." });
+    return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin." });
   }
 
-  // Kiểm tra giới tính hợp lệ
+  // Validate giới tính...
   if (!['male', 'female', 'other'].includes(sex)) {
-    console.log(`[${timestamp}] [REGISTER FAILED] Username_acc: ${username_acc} - Reason: Invalid sex value`);
-    return res.status(400).json({ error: "Giới tính không hợp lệ. Chọn: male, female, hoặc other." });
+    return res.status(400).json({ error: "Giới tính không hợp lệ." });
   }
 
-  // Kiểm tra xem username_acc đã tồn tại chưa
-  const { data: existingUser } = await supabase
-    .from("users")
-    .select("*")
-    .eq("username_acc", username_acc)
-    .single();
+  try {
+    // Check trùng username_acc
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("username_acc", username_acc)
+      .maybeSingle();
 
-  if (existingUser) {
-    console.log(`[${timestamp}] [REGISTER FAILED] Username_acc: ${username_acc} - Reason: Username already exists`);
-    return res.status(400).json({ error: "Tên đăng nhập đã tồn tại." });
-  }
+    if (existingUser) {
+      return res.status(400).json({ error: "Tên đăng nhập đã tồn tại." });
+    }
 
-  // Mã hóa mật khẩu
-  const hashedPassword = await bcrypt.hash(password, 10);
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Thêm vào bảng account
-  const { data, error } = await supabase
-    .from("users")
-    .insert([{
-      username_acc: username_acc,
-      password: hashedPassword,
-      username: username,
-      sex: sex
-    }])
-    .select();
+    // [NEW] Mã hóa tên hiển thị (username) trước khi lưu
+    const encryptedDisplayName = encryptData(username);
 
-  if (error) {
-    console.log(`[${timestamp}] [REGISTER FAILED] Username_acc: ${username_acc} - Reason: Database error - ${error.message}`);
+    // Insert DB
+    const { data, error } = await supabase
+      .from("users")
+      .insert([{
+        username_acc: username_acc,
+        password: hashedPassword,
+        username: encryptedDisplayName, // Lưu bản mã hóa
+        sex: sex,
+        is_instructor: false // Mặc định
+      }])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return res.status(201).json({
+      message: "Đăng ký thành công",
+      // Không cần trả về quá nhiều info, client sẽ tự redirect sang trang login
+      userId: data.id
+    });
+
+  } catch (err) {
+    console.error(`[${timestamp}] Register Error:`, err);
     return res.status(500).json({ error: "Lỗi khi tạo tài khoản." });
   }
-
-  console.log(`[${timestamp}] [REGISTER SUCCESS] Username_acc: ${username_acc} - User ID: ${data[0].id} - Username: ${username} - Sex: ${sex}`);
-
-  return res.status(201).json({
-    message: "Đăng ký thành công",
-    account: {
-      id: data[0].id,
-      username_acc: data[0].username_acc,
-      username: data[0].username,
-      sex: data[0].sex
-    },
-  });
 };
 
-// Config
-const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+// 3. ĐĂNG NHẬP GOOGLE
 const googleLogin = async (req, res) => {
   const timestamp = new Date().toISOString();
 
   try {
     const { idToken, email, displayName, photoUrl } = req.body;
-    console.log(`[${timestamp}] [GOOGLE LOGIN] Attempt: ${email}`);
 
-    // 1. Xác thực idToken với Google
+    // Validate Google Token
     const ticket = await client.verifyIdToken({
       idToken: idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
-
     const payload = ticket.getPayload();
     const googleEmail = payload.email;
 
-    // Bảo mật: Validate email
     if (email !== googleEmail) {
-      return res.status(400).json({ message: 'Token không hợp lệ' });
+      return res.status(400).json({ message: 'Email không khớp với Google Token' });
     }
 
-    // 2. Kiểm tra user trong Supabase
-    // Lưu ý: Cần đảm bảo bảng 'users' có cột 'email' hoặc dùng 'username_acc' để lưu email
+    // Tìm user
     let { data: user, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', googleEmail) // Nên thêm cột email vào DB
-      .maybeSingle(); // Dùng maybeSingle an toàn hơn single (tránh lỗi nếu không tìm thấy)
+      .eq('email', googleEmail)
+      .maybeSingle();
 
-    // 3. Nếu chưa có user -> Tạo mới
+    // A. NẾU USER ĐÃ TỒN TẠI -> CHECK MIGRATION (QUAN TRỌNG)
+    if (user) {
+      // Nếu tên chưa được mã hóa (không chứa dấu ':') -> Mã hóa ngay
+      if (user.username && !user.username.includes(':')) {
+        console.log(`[MIGRATION] Mã hóa dữ liệu cũ cho user: ${googleEmail}`);
+        const encryptedName = encryptData(user.username);
+
+        // Update ngầm vào DB
+        await supabase
+          .from('users')
+          .update({ username: encryptedName })
+          .eq('id', user.id);
+
+        // Update biến local để trả về đúng format
+        user.username = encryptedName;
+      }
+    }
+
+    // B. NẾU CHƯA CÓ USER -> TẠO MỚI
     if (!user) {
-      console.log(`[${timestamp}] [GOOGLE REGISTER] Creating new user for: ${googleEmail}`);
-
-      // Tạo username từ phần đầu email nếu chưa có
+      console.log(`[REGISTER GOOGLE] New user: ${googleEmail}`);
       const generatedUsername = googleEmail.split('@')[0];
+
+      // Mã hóa tên
+      const encryptedName = encryptData(displayName || generatedUsername);
 
       const { data: newUser, error: insertError } = await supabase
         .from('users')
-        .insert([
-          {
-            // Mapping dữ liệu cho khớp với DB của bạn
-            username_acc: googleEmail, // Dùng email làm tên đăng nhập luôn cho user Google
-            username: displayName || generatedUsername,
-            email: googleEmail,        // Cần thêm cột này vào DB
-            avatar_url: photoUrl,      // Cần thêm cột này vào DB
-            // password: null,         // User Google không có pass
-            sex: 'male',              // Giá trị mặc định vì Google không trả về sex
-            is_instructor: false       // Mặc định là học viên
-          }
-        ])
+        .insert([{
+          username_acc: googleEmail,
+          username: encryptedName, // Lưu mã hóa
+          email: googleEmail,
+          avatar_url: photoUrl,
+          sex: 'male',
+          is_instructor: false
+        }])
         .select()
         .single();
 
-      if (insertError) {
-        console.error("Insert Error:", insertError);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
       user = newUser;
     }
 
-    // 4. Tạo JWT 
-    // SỬA LỖI: Đổi 'userId' thành 'id' để khớp với hàm login thường
-    const token = jwt.sign(
-      { id: user.id, username: user.username },
-      process.env.JWT_SECRET,
-      { expiresIn: '30d' } // Token Google cho sống lâu hơn chút cũng được
-    );
+    // C. TẠO TOKENS (Access + Refresh)
+    const { accessToken, refreshToken } = await generateTokens(user);
 
-    // 5. Trả về client
+    // D. TRẢ VỀ CLIENT
     return res.status(200).json({
       message: 'Đăng nhập Google thành công',
-      token: token,
+      accessToken,
+      refreshToken,
       user: {
         id: user.id,
-        username: user.username,
+        // Giải mã tên
+        username: user.username ? decryptData(user.username) : displayName,
         is_instructor: user.is_instructor,
         avatar: user.avatar_url
       }
@@ -197,10 +255,54 @@ const googleLogin = async (req, res) => {
     console.error(`[${timestamp}] [GOOGLE AUTH ERROR]:`, error);
     return res.status(500).json({ message: 'Lỗi xác thực Google phía Server' });
   }
-}
+};
+
+// 4. LẤY ACCESS TOKEN MỚI (REFRESH)
+const requestRefreshToken = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) return res.status(401).json("Bạn chưa gửi Refresh Token");
+
+    // 1. Verify hạn sử dụng & chữ ký
+    jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, async (err, decoded) => {
+      if (err) return res.status(403).json("Refresh Token hết hạn hoặc không hợp lệ");
+
+      // 2. Lấy hash từ DB
+      const { data: user } = await supabase
+        .from('users')
+        .select('id, role, refresh_token_hash')
+        .eq('id', decoded.id)
+        .single();
+
+      if (!user || !user.refresh_token_hash) {
+        return res.status(403).json("Token không tồn tại");
+      }
+
+      // 3. So sánh Hash
+      const isMatch = await bcrypt.compare(refreshToken, user.refresh_token_hash);
+      if (!isMatch) {
+        // Token giả hoặc đã bị dùng -> Xóa luôn để bắt đăng nhập lại
+        await supabase.from('users').update({ refresh_token_hash: null }).eq('id', user.id);
+        return res.status(403).json("Token không hợp lệ! Vui lòng đăng nhập lại.");
+      }
+
+      // 4. Cấp Access Token mới
+      const newAccessToken = jwt.sign(
+        { id: user.id, role: user.role },
+        process.env.JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+
+      return res.status(200).json({ accessToken: newAccessToken });
+    });
+  } catch (err) {
+    return res.status(500).json(err);
+  }
+};
 
 export default {
   login,
   register,
-  googleLogin
+  googleLogin,
+  requestRefreshToken
 };

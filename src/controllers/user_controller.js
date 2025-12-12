@@ -33,7 +33,6 @@ const getUserInfo = async (req, res) => {
       .select("*")
       .eq("id", userId)
       .single();
-console.log("Data:", data);
     if (error || !data) {
       return res.status(404).json({ error: "Không tìm thấy người dùng." });
     }
