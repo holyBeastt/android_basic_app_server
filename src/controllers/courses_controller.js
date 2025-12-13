@@ -119,7 +119,7 @@ const addReview = async (req, res) => {
   const courseId = req.params.id;
   const { user_id, user_name, rating, comment } = req.body;
 
-  console.log("========", courseId , user_id, user_name, rating, comment);
+  console.log("Thông tin bổ ích ========", courseId , user_id, user_name, rating, comment);
 
   if (!user_id || !user_name || !rating || !comment) {
     return res.status(400).json({ error: "Thiếu thông tin đánh giá." });
