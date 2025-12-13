@@ -72,9 +72,105 @@ const login = async (req, res) => {
       return res.status(401).json({ error: "Tên đăng nhập không tồn tại." });
     }
 
+    // ========== [NEW] KIỂM TRA TÀI KHOẢN BỊ KHÓA ==========
+    const now = new Date();
+    
+    // Nếu tài khoản đang bị khóa
+    if (user.locked_until && new Date(user.locked_until) > now) {
+      const remainingTime = Math.ceil((new Date(user.locked_until) - now) / 1000 / 60); // phút
+      return res.status(423).json({ 
+        error: "Tài khoản đã bị khóa do đăng nhập sai quá nhiều lần.",
+        locked_until: user.locked_until,
+        remaining_minutes: remainingTime
+      });
+    }
+
+    // Nếu đã hết thời gian khóa -> Tự động mở khóa và reset
+    if (user.locked_until && new Date(user.locked_until) <= now) {
+      await supabase
+        .from("users")
+        .update({ 
+          login_attempts: 0, 
+          locked_until: null 
+        })
+        .eq("id", user.id);
+      
+      user.login_attempts = 0;
+      user.locked_until = null;
+    }
+
+    // ========== KIỂM TRA MẬT KHẨU ==========
     const isMatch = await bcrypt.compare(password, user.password);
+    
     if (!isMatch) {
-      return res.status(401).json({ error: "Sai mật khẩu." });
+      // Tăng số lần đăng nhập sai
+      const newAttempts = (user.login_attempts || 0) + 1;
+      const MAX_ATTEMPTS = 3;
+      const LOCK_DURATION_MINUTES = 1; // ✅ Khóa 1 phút
+
+      console.log(`[DEBUG] ❌ Sai mật khẩu - User ID: ${user.id}`);
+      console.log(`[DEBUG] Số lần hiện tại: ${user.login_attempts || 0}`);
+      console.log(`[DEBUG] Số lần mới: ${newAttempts}`);
+
+      if (newAttempts >= MAX_ATTEMPTS) {
+        // Khóa tài khoản 10 phút
+        const lockUntil = new Date(now.getTime() + LOCK_DURATION_MINUTES * 60 * 1000);
+        
+        console.log(`[DEBUG] 🔒 Khóa tài khoản đến: ${lockUntil.toISOString()}`);
+        
+        const { data, error } = await supabase
+          .from("users")
+          .update({ 
+            login_attempts: newAttempts,
+            locked_until: lockUntil.toISOString()
+          })
+          .eq("id", user.id)
+          .select();
+
+        if (error) {
+          console.error("[ERROR] ❌ Không thể khóa tài khoản:", error);
+          console.error("[ERROR] Chi tiết:", JSON.stringify(error, null, 2));
+        } else {
+          console.log("[DEBUG] ✅ Đã khóa tài khoản thành công");
+        }
+
+        return res.status(423).json({ 
+          error: `Bạn đã nhập sai mật khẩu ${MAX_ATTEMPTS} lần. Tài khoản đã bị khóa ${LOCK_DURATION_MINUTES} phút.`,
+          locked_until: lockUntil.toISOString(),
+          remaining_minutes: LOCK_DURATION_MINUTES
+        });
+      } else {
+        // Chưa đến giới hạn -> Chỉ tăng số lần
+        console.log(`[DEBUG] ⚠️ Tăng số lần thử từ ${user.login_attempts || 0} lên ${newAttempts}`);
+        
+        const { data, error } = await supabase
+          .from("users")
+          .update({ login_attempts: newAttempts })
+          .eq("id", user.id)
+          .select();
+
+        if (error) {
+          console.error("[ERROR] ❌ Không thể cập nhật login_attempts:", error);
+          console.error("[ERROR] Chi tiết:", JSON.stringify(error, null, 2));
+          console.error("[ERROR] Có thể bạn chưa tạo cột 'login_attempts' trong Supabase!");
+        } else {
+          console.log("[DEBUG] ✅ Đã tăng login_attempts thành công:", data);
+        }
+
+        return res.status(401).json({ 
+          error: "Sai mật khẩu.",
+          attempts_remaining: MAX_ATTEMPTS - newAttempts
+        });
+      }
+    }
+
+    // ========== ĐĂNG NHẬP THÀNH CÔNG ==========
+    // Reset số lần đăng nhập sai
+    if (user.login_attempts > 0) {
+      await supabase
+        .from("users")
+        .update({ login_attempts: 0 })
+        .eq("id", user.id);
     }
 
     // [NEW] Tạo Access + Refresh Token (Thay vì chỉ 1 token như cũ)
