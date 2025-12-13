@@ -124,35 +124,19 @@ const login = async (req, res) => {
       return res.status(401).json({ error: "Tên đăng nhập không tồn tại." });
     }
 
-    // ========== [NEW] KIỂM TRA TÀI KHOẢN BỊ KHÓA ==========
+    // ========== KIỂM TRA TÀI KHOẢN CÓ BỊ KHÓA KHÔNG ==========
     const now = new Date();
-    
-    // Nếu tài khoản đang bị khóa
     if (user.locked_until && new Date(user.locked_until) > now) {
-      const remainingTime = Math.ceil((new Date(user.locked_until) - now) / 1000 / 60); // phút
+      const remainingTime = Math.ceil((new Date(user.locked_until) - now) / 1000);
       return res.status(423).json({ 
-        error: "Tài khoản đã bị khóa do đăng nhập sai quá nhiều lần.",
-        locked_until: user.locked_until,
-        remaining_minutes: remainingTime
+        error: `Tài khoản bị khóa. Vui lòng thử lại sau ${remainingTime} giây.`,
+        remainingTime,
+        isLocked: true
       });
     }
 
-    // Nếu đã hết thời gian khóa -> Tự động mở khóa và reset
-    if (user.locked_until && new Date(user.locked_until) <= now) {
-      await supabase
-        .from("users")
-        .update({ 
-          login_attempts: 0, 
-          locked_until: null 
-        })
-        .eq("id", user.id);
-      
-      user.login_attempts = 0;
-      user.locked_until = null;
-    }
-
     // ========== KIỂM TRA MẬT KHẨU ==========
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user. password);
     
     if (!isMatch) {
       // Xử lý đăng nhập sai
