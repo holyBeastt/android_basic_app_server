@@ -2,6 +2,7 @@ import supabase from "../config/supabase.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import path from "path";
+import { encryptData, decryptData } from "../utils/crypto.js";
 
 // Helper upload avatar to Supabase
 async function uploadAvatarToSupabase(file, userId) {
@@ -20,6 +21,7 @@ async function uploadAvatarToSupabase(file, userId) {
 }
 
 const getUserInfo = async (req, res) => {
+  console.log("Lấy thông tin người dùng")
   try {
     // Lấy userId từ params hoặc body (tùy bạn truyền kiểu nào)
     const userId = req.params.userId
@@ -36,7 +38,20 @@ const getUserInfo = async (req, res) => {
     if (error || !data) {
       return res.status(404).json({ error: "Không tìm thấy người dùng." });
     }
-    return res.status(200).json(data);
+
+    // Giải mã các trường lưu trữ đã mã hóa trước khi trả về cho client
+    const user = { ...data };
+    try {
+      user.username = user.username ? decryptData(user.username) : user.username;
+      user.bio = user.bio ? decryptData(user.bio) : user.bio;
+    } catch (e) {
+      // Nếu lỗi giải mã, trả về dữ liệu gốc (tương thích ngược)
+      console.error('Lỗi khi giải mã user fields:', e.message || e);
+    }
+
+    console.log("user", user);
+
+    return res.status(200).json(user);
   } catch (err) {
     return res.status(500).json({ error: "Lỗi server." });
   }
@@ -71,12 +86,17 @@ const updateUserInfo = async (req, res) => {
       hashedPassword = await bcrypt.hash(password, 10);
     }
 
-    // 3. Tạo object cập nhật
-    const updateFields = {
-      username: username,
-      bio: bio,
-      sex: sex,
-    };
+    // 3. Tạo object cập nhật (chỉ thêm các field được gửi lên)
+    const updateFields = {};
+    if (username && username.trim() !== "") {
+      updateFields.username = encryptData(username);
+    }
+    if (bio !== undefined) {
+      updateFields.bio = bio ? encryptData(bio) : bio;
+    }
+    if (sex !== undefined) {
+      updateFields.sex = sex;
+    }
     // Nếu có file avatar upload
     if (req.file) {
       try {
@@ -104,7 +124,17 @@ const updateUserInfo = async (req, res) => {
       return res.status(400).json({ error: error.message });
     }
 
-    return res.json({ message: "Cập nhật thành công!", user: data[0] });
+    const updatedUser = data && data[0] ? { ...data[0] } : null;
+    if (updatedUser) {
+      try {
+        updatedUser.username = updatedUser.username ? decryptData(updatedUser.username) : updatedUser.username;
+        updatedUser.bio = updatedUser.bio ? decryptData(updatedUser.bio) : updatedUser.bio;
+      } catch (e) {
+        console.error('Lỗi khi giải mã sau cập nhật:', e.message || e);
+      }
+    }
+
+    return res.json({ message: "Cập nhật thành công!", user: updatedUser });
   } catch (err) {
     console.error("Lỗi cập nhật:", err);
     return res.status(500).json({ error: "Lỗi server." });
