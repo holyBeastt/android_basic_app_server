@@ -9,7 +9,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 // Hàm helper để tạo bộ đôi token
 const generateTokens = async (user) => {
   const accessToken = jwt.sign(
-    { id: user.id, role: user.is_instructor ? 'instructor' : 'user' },
+    { id: user.id },
     process.env.JWT_SECRET,
     { expiresIn: '1h' }
   );
@@ -28,7 +28,7 @@ const generateTokens = async (user) => {
   const { data, error } = await supabase
     .from('users')
     .update({
-      refresh_token_hash:  hashedRefreshToken,
+      refresh_token_hash: hashedRefreshToken,
       last_login: new Date(),
       login_attempts: 0, // Reset số lần đăng nhập sai khi đăng nhập thành công
       locked_until: null  // Mở khóa tài khoản
@@ -48,32 +48,32 @@ const generateTokens = async (user) => {
 // ========== HÀM MỚI:  KIỂM TRA VÀ CẬP NHẬT SỐ LẦN ĐĂNG NHẬP SAI ==========
 const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail, encryptedUsername) => {
   const now = new Date();
-  
+
   // Kiểm tra đang bị khóa
   if (lockedUntil && new Date(lockedUntil) > now) {
     const remainingTime = Math.ceil((new Date(lockedUntil) - now) / 1000);
     return {
       isLocked: true,
-      message:  `Tài khoản đã bị khóa.  Vui lòng thử lại sau ${remainingTime} giây. `,
+      message: `Tài khoản đã bị khóa.  Vui lòng thử lại sau ${remainingTime} giây. `,
       remainingTime
     };
   }
 
   const newAttempts = (currentAttempts || 0) + 1;
-  
+
   // Nếu sai 3 lần → Khóa + Gửi email
   if (newAttempts >= 3) {
     const lockTime = new Date(now.getTime() + 60 * 1000); // Khóa 60 giây
-    
+
     // Cập nhật DB
     await supabase
       .from('users')
       .update({
-        login_attempts:  newAttempts,
+        login_attempts: newAttempts,
         locked_until: lockTime.toISOString()
       })
       .eq('id', userId);
-    
+
     // GỬI EMAIL (không chặn flow chính)
     if (userEmail) {
       const decryptedUsername = encryptedUsername ? decryptData(encryptedUsername) : 'User';
@@ -81,28 +81,60 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
         console.error('⚠️ Email không gửi được (không ảnh hưởng):', err.message);
       });
     }
-    
+
     return {
       isLocked: true,
       message: `Tài khoản bị khóa 1 phút do nhập sai mật khẩu 3 lần. Email cảnh báo đã được gửi.`,
       attemptsLeft: 0
     };
   }
-  
+
   // Chưa đủ 3 lần
   await supabase
-    . from('users')
+    .from('users')
     .update({
       login_attempts: newAttempts,
       locked_until: null
     })
     .eq('id', userId);
-  
+
   return {
     isLocked: false,
     message: `Sai mật khẩu. Bạn còn ${3 - newAttempts} lần thử. `,
     attemptsLeft: 3 - newAttempts
   };
+};
+
+const performLazyMigration = async (user) => {
+  console.log("vào")
+  const fieldsToMigrate = ['username', 'bio']; // Danh sách các trường cần kiểm tra mã hóa
+  let needsUpdate = false;
+  const updateData = {};
+
+  for (const field of fieldsToMigrate) {
+    // Kiểm tra nếu trường có dữ liệu và CHƯA chứa ký tự phân tách của crypto (ví dụ ':')
+    if (user[field] && !String(user[field]).includes(':')) {
+      console.log(`[MIGRATION] Encrypting legacy data for field [${field}] - User ID: ${user.id}`);
+      updateData[field] = encryptData(user[field]);
+      user[field] = updateData[field]; // Cập nhật trực tiếp vào đối tượng user hiện tại
+      needsUpdate = true;
+    }
+  }
+
+  if (needsUpdate) {
+    const { error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', user.id);
+
+    if (error) {
+      console.error(`[MIGRATION ERROR] Failed to update user ${user.id}:`, error);
+    }
+  }
+
+  console.log("ra")
+
+  return user;
 };
 
 // ========== 1. ĐĂNG NHẬP THƯỜNG (Username/Password) ==========
@@ -115,7 +147,7 @@ const login = async (req, res) => {
 
     // Lấy thông tin user
     const { data: user, error } = await supabase
-      . from("users")
+      .from("users")
       .select("*")
       .eq("username_acc", username)
       .single();
@@ -128,7 +160,7 @@ const login = async (req, res) => {
     const now = new Date();
     if (user.locked_until && new Date(user.locked_until) > now) {
       const remainingTime = Math.ceil((new Date(user.locked_until) - now) / 1000);
-      return res.status(423).json({ 
+      return res.status(423).json({
         error: `Tài khoản bị khóa. Vui lòng thử lại sau ${remainingTime} giây.`,
         remainingTime,
         isLocked: true
@@ -136,18 +168,18 @@ const login = async (req, res) => {
     }
 
     // ========== KIỂM TRA MẬT KHẨU ==========
-    const isMatch = await bcrypt.compare(password, user. password);
-    
+    const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
       // Xử lý đăng nhập sai
       const failResult = await handleFailedLogin(
-        user.id, 
-        user.login_attempts, 
+        user.id,
+        user.login_attempts,
         user.locked_until,
-        user.email, 
+        user.email,
         user.username
       );
-      
+
       return res.status(401).json({
         error: failResult.message,
         attemptsLeft: failResult.attemptsLeft,
@@ -155,6 +187,9 @@ const login = async (req, res) => {
         remainingTime: failResult.remainingTime
       });
     }
+
+    // Thực hiện migration trước khi tạo Token và trả về dữ liệu
+    await performLazyMigration(user);
 
     // ========== ĐĂNG NHẬP THÀNH CÔNG ==========
     const { accessToken, refreshToken } = await generateTokens(user);
@@ -167,7 +202,7 @@ const login = async (req, res) => {
     return res.status(200).json({
       message: loginMessage,
       user: {
-        id: user. id,
+        id: user.id,
         username: decryptedDisplayName,
         is_instructor: user.is_instructor,
         avatar: user.avatar_url
@@ -187,7 +222,7 @@ const register = async (req, res) => {
   const { username_acc, password, confirmPassword, username, sex } = req.body;
   const timestamp = new Date().toISOString();
 
-  if (! username_acc || !password || ! username || !sex) {
+  if (!username_acc || !password || !username || !sex) {
     return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin." });
   }
 
@@ -196,8 +231,8 @@ const register = async (req, res) => {
   }
 
   try {
-    const { data:  existingUser } = await supabase
-      . from("users")
+    const { data: existingUser } = await supabase
+      .from("users")
       .select("id")
       .eq("username_acc", username_acc)
       .maybeSingle();
@@ -206,13 +241,13 @@ const register = async (req, res) => {
       return res.status(400).json({ error: "Tên đăng nhập đã tồn tại." });
     }
 
-    const hashedPassword = await bcrypt. hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 10);
     const encryptedDisplayName = encryptData(username);
 
     const { data, error } = await supabase
       .from("users")
       .insert([{
-        username_acc:  username_acc,
+        username_acc: username_acc,
         password: hashedPassword,
         username: encryptedDisplayName,
         sex: sex,
@@ -244,11 +279,11 @@ const googleLogin = async (req, res) => {
     const { idToken, email, displayName, photoUrl } = req.body;
 
     const ticket = await client.verifyIdToken({
-      idToken:  idToken,
+      idToken: idToken,
       audience: process.env.GOOGLE_CLIENT_ID,
     });
     const payload = ticket.getPayload();
-    const googleEmail = payload. email;
+    const googleEmail = payload.email;
 
     if (email !== googleEmail) {
       return res.status(400).json({ message: 'Email không khớp với Google Token' });
@@ -261,15 +296,7 @@ const googleLogin = async (req, res) => {
       .maybeSingle();
 
     if (user) {
-      if (user.username && ! user.username. includes(': ')) {
-        console.log(`[MIGRATION] Mã hóa dữ liệu cũ cho user:  ${googleEmail}`);
-        const encryptedName = encryptData(user.username);
-        await supabase
-          .from('users')
-          .update({ username: encryptedName })
-          .eq('id', user.id);
-        user. username = encryptedName;
-      }
+      await performLazyMigration(user);
     }
 
     if (!user) {
@@ -277,17 +304,17 @@ const googleLogin = async (req, res) => {
       const generatedUsername = googleEmail.split('@')[0];
       const encryptedName = encryptData(displayName || generatedUsername);
 
-      const { data:  newUser, error: insertError } = await supabase
-        . from('users')
+      const { data: newUser, error: insertError } = await supabase
+        .from('users')
         .insert([{
-          username_acc:  googleEmail,
+          username_acc: googleEmail,
           username: encryptedName,
           email: googleEmail,
           avatar_url: photoUrl,
           sex: 'male',
           is_instructor: false,
           login_attempts: 0,
-          locked_until:  null
+          locked_until: null
         }])
         .select()
         .single();
@@ -303,9 +330,9 @@ const googleLogin = async (req, res) => {
       accessToken,
       refreshToken,
       user: {
-        id:  user.id,
-        username: user.username ?  decryptData(user.username) : displayName,
-        is_instructor:  user.is_instructor,
+        id: user.id,
+        username: user.username ? decryptData(user.username) : displayName,
+        is_instructor: user.is_instructor,
         avatar: user.avatar_url
       }
     });
@@ -317,42 +344,86 @@ const googleLogin = async (req, res) => {
 };
 
 // ========== 4. LẤY ACCESS TOKEN MỚI (REFRESH) ==========
+
+// Cách viết khuyến nghị (Sử dụng Promisify hoặc await trực tiếp)
 const requestRefreshToken = async (req, res) => {
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) return res.status(401).json("Bạn chưa gửi Refresh Token");
 
-    jwt.verify(refreshToken, process. env.JWT_REFRESH_SECRET, async (err, decoded) => {
-      if (err) return res.status(403).json("Refresh Token hết hạn hoặc không hợp lệ");
+    // Thay vì dùng callback, ta có thể dùng try-catch cho verify
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+    } catch (err) {
+      return res.status(403).json("Refresh Token hết hạn hoặc không hợp lệ");
+    }
 
-      const { data: user } = await supabase
-        .from('users')
-        .select('id, role, refresh_token_hash')
-        .eq('id', decoded.id)
-        .single();
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, refresh_token_hash')
+      .eq('id', decoded.id)
+      .single();
 
-      if (!user || !user.refresh_token_hash) {
-        return res.status(403).json("Token không tồn tại");
-      }
+    if (error || !user || !user.refresh_token_hash) {
+      return res.status(403).json("Token không tồn tại");
+    }
 
-      const isMatch = await bcrypt.compare(refreshToken, user.refresh_token_hash);
-      if (!isMatch) {
-        await supabase.from('users').update({ refresh_token_hash: null }).eq('id', user.id);
-        return res.status(403).json("Token không hợp lệ! Vui lòng đăng nhập lại.");
-      }
+    const isMatch = await bcrypt.compare(refreshToken, user.refresh_token_hash);
+    if (!isMatch) {
+      await supabase.from('users').update({ refresh_token_hash: null }).eq('id', user.id);
+      return res.status(403).json("Token không hợp lệ! Vui lòng đăng nhập lại.");
+    }
 
-      const newAccessToken = jwt.sign(
-        { id: user.id, role: user.role },
-        process.env.JWT_SECRET,
-        { expiresIn: '1h' }
-      );
+    const newAccessToken = jwt.sign(
+      { id: user.id },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
 
-      return res.status(200).json({ accessToken: newAccessToken });
-    });
+    return res.status(200).json({ accessToken: newAccessToken });
+
   } catch (err) {
-    return res.status(500).json(err);
+    console.error("Refresh Token Error:", err);
+    return res.status(500).json({ error: "Lỗi hệ thống" });
   }
 };
+// const requestRefreshToken = async (req, res) => {
+//   try {
+//     const { refreshToken } = req.body;
+//     if (!refreshToken) return res.status(401).json("Bạn chưa gửi Refresh Token");
+
+//     jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET, async (err, decoded) => {
+//       if (err) return res.status(403).json("Refresh Token hết hạn hoặc không hợp lệ");
+
+//       const { data: user } = await supabase
+//         .from('users')
+//         .select('id, refresh_token_hash')
+//         .eq('id', decoded.id)
+//         .single();
+
+//       if (!user || !user.refresh_token_hash) {
+//         return res.status(403).json("Token không tồn tại");
+//       }
+
+//       const isMatch = await bcrypt.compare(refreshToken, user.refresh_token_hash);
+//       if (!isMatch) {
+//         await supabase.from('users').update({ refresh_token_hash: null }).eq('id', user.id);
+//         return res.status(403).json("Token không hợp lệ! Vui lòng đăng nhập lại.");
+//       }
+
+//       const newAccessToken = jwt.sign(
+//         { id: user.id },
+//         process.env.JWT_SECRET,
+//         { expiresIn: '1h' }
+//       );
+
+//       return res.status(200).json({ accessToken: newAccessToken });
+//     });
+//   } catch (err) {
+//     return res.status(500).json(err);
+//   }
+// };
 
 export default {
   login,
