@@ -115,6 +115,7 @@ router.get("/sections/:sectionId", sectionController.getOne);
 
 // Lessons as independent resource  
 router.get("/lessons", lessonController.list);             // ?section_id=456
+// Signed URL for lesson video
 router.get("/lessons/:lessonId", lessonController.getOne);
 
 // Quizzes as independent resource

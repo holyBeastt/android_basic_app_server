@@ -29,7 +29,7 @@ const getCourseWithCategory = async (req, res) => {
       .select("*") // Chỉ lấy từ bảng courses
       .eq("category_name", category) // Lọc theo thuộc tính category_name
       .order("created_at", { ascending: false }); // Sắp xếp theo thời gian tạo
-console.log("courses =============", courses);
+    console.log("courses =============", courses);
     if (courseError) {
       console.error("Lỗi khi lấy khóa học:", courseError.message);
       return res
@@ -65,7 +65,7 @@ const getCourseWithSearch = async (req, res) => {
         `title.ilike.%${searchQuery}%,subtitle.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`
       )
       .order("created_at", { ascending: false });
-console.log("courses ======", courses);
+    console.log("courses ======", courses);
     if (courseError) {
       console.error("Lỗi khi tìm kiếm khóa học:", courseError.message);
       return res.status(500).json({ error: "Không thể tìm kiếm khóa học." });
@@ -91,6 +91,9 @@ const getCourseSectionsWithLessons = async (req, res) => {
     .select("*, lessons(*)") // Lấy cả các bài học trong phần học
     .eq("course_id", courseId)
     .order("order_index", { ascending: true });
+
+
+  console.log("section = ", sections)
 
   if (sectionError) {
     console.log("Xảy ra lỗi khi lấy dữ liệu phần học, bài học");
@@ -119,7 +122,7 @@ const addReview = async (req, res) => {
   const courseId = req.params.id;
   const { user_id, user_name, rating, comment } = req.body;
 
-  console.log("Thông tin bổ ích ========", courseId , user_id, user_name, rating, comment);
+  console.log("Thông tin bổ ích ========", courseId, user_id, user_name, rating, comment);
 
   if (!user_id || !user_name || !rating || !comment) {
     return res.status(400).json({ error: "Thiếu thông tin đánh giá." });
@@ -185,6 +188,105 @@ const getTeacherInfo = async (req, res) => {
     return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
   }
 };
+
+const getSignedUrl = async (req, res) => {
+  const timestamp = new Date().toISOString();
+  try {
+    const userId = req.user.id;
+    const { lessonId } = req.params;
+
+    console.log(`[${timestamp}] --- BẮT ĐẦU KIỂM TRA VIDEO ---`);
+    console.log(`[DEBUG] Input -> userId: ${userId}, lessonId: ${lessonId}`);
+
+    // 1. Lấy thông tin bài học và Join
+    const { data: lessonData, error: lessonError } = await supabase
+      .from('lessons')
+      .select(`
+        content_url,
+        course_id,
+        courses:course_id (
+          user_id
+        )
+      `)
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lessonData) {
+      console.error(`[ERROR 1] Truy vấn bài học thất bại:`, lessonError?.message || "Không tìm thấy data");
+      return res.status(404).json({ error: "Bài học không tồn tại" });
+    }
+
+    const courseId = lessonData.course_id;
+    const instructorId = lessonData.courses?.user_id;
+    console.log(`[DEBUG] Lesson Data -> courseId: ${courseId}, instructorId: ${instructorId}`);
+    console.log(`[DEBUG] Content URL từ DB: "${lessonData.content_url}"`);
+
+    let hasAccess = false;
+
+    // 2. KIỂM TRA QUYỀN TRUY CẬP
+    if (userId === instructorId) {
+      console.log("[CHECK] Kết quả: TRÙNG KHỚP (User là Giảng viên)");
+      hasAccess = true;
+    } else {
+      console.log(`[CHECK] Đang kiểm tra thanh toán cho User: ${userId} tại Course: ${courseId}...`);
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .select('id, status')
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .eq('status', 'PAID')
+        .maybeSingle();
+
+      if (paymentError) console.error(`[ERROR 2] Lỗi truy vấn payment:`, paymentError.message);
+
+      if (payment) {
+        console.log(`[CHECK] Kết quả: ĐÃ THANH TOÁN (Payment ID: ${payment.id})`);
+        hasAccess = true;
+      } else {
+        console.warn(`[CHECK] Kết quả: TỪ CHỐI (Không tìm thấy bản ghi PAID)`);
+      }
+    }
+
+    // 3. XỬ LÝ KHI KHÔNG CÓ QUYỀN
+    if (!hasAccess) {
+      return res.status(403).json({ error: "Bạn không có quyền truy cập bài học này." });
+    }
+
+    // 4. TẠO SIGNED URL
+    // KIỂM TRA: content_url có bắt đầu bằng dấu "/" hay không? 
+    // Supabase đôi khi yêu cầu bỏ dấu "/" ở đầu nếu là đường dẫn tương đối.
+    const cleanPath = lessonData.content_url.startsWith('/')
+      ? lessonData.content_url.substring(1)
+      : lessonData.content_url;
+
+    console.log(`[DEBUG] Đang tạo Signed URL cho path: "${cleanPath}" trong bucket: "videos"`);
+
+    const { data, error: storageError } = await supabase.storage
+      .from('videos')
+      .createSignedUrl(cleanPath, 20);
+
+    if (storageError) {
+      console.error(`[ERROR 3] Storage Error:`, storageError.message);
+      // Log thêm để kiểm tra nếu bucket tên là "videos" có tồn tại không
+      return res.status(400).json({ error: "Lỗi Storage", detail: storageError.message });
+    }
+
+    if (!data?.signedUrl) {
+      console.error(`[ERROR 4] Không tạo được signedUrl mặc dù không có lỗi storage.`);
+      return res.status(500).json({ error: "Lỗi tạo link" });
+    }
+
+    console.log(`[SUCCESS] Đã tạo thành công Signed URL.`);
+    console.log(`[URL] -> ${data.signedUrl}`);
+
+    return res.status(200).json({ signedUrl: data.signedUrl });
+
+  } catch (err) {
+    console.error(`[FATAL ERROR]`, err);
+    return res.status(500).json({ error: "Lỗi hệ thống" });
+  }
+};
+
 export default {
   getTopCoursesList,
   getCourseSectionsWithLessons,
@@ -193,4 +295,5 @@ export default {
   getReviews,
   addReview,
   getTeacherInfo,
+  getSignedUrl,
 };

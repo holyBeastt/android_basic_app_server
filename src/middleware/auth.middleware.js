@@ -1,33 +1,54 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
+import supabase from "../config/supabase.js";
 
 const authenticateToken = async (req, res, next) => {
   try {
-    const token = req.header("Authorization").replace("Bearer ", "");
+    // 1. Lấy token từ header Authorization: Bearer <token>
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      return res
-        .status(401)
-        .json({ message: "No authentication token, access denided" });
+      console.log("lỗi token 1")
+      return res.status(401).json({ message: "Không tìm thấy mã xác thực." });
     }
 
-    // verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    // 2. Xác minh JWT
+    jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
+      if (err) {
+        if (err.name === "TokenExpiredError") {
+          return res.status(401).json({
+            code: "ACCESS_TOKEN_EXPIRED", // Mã để Flutter biết cần refresh
+            message: "Token đã hết hạn"
+          });
+        }
+        return res.status(401).json({ message: "Token không hợp lệ" });
+      }
 
-    // find the user
-    const user = await User.findById(decoded.userId).select("-password");
+      // 3. Truy vấn User từ Supabase dựa trên 'id' trong token
+      const { data: user, error } = await supabase
+        .from('users')
+        .select('id, username, is_instructor')
+        .eq('id', decoded.id)
+        .single();
 
-    if (!user) {
-      return res
-        .status(401)
-        .json({ message: "Token is invalid, access denied" });
-    }
+      if (error || !user) {
+        return res.status(404).json({ message: "Người dùng không tồn tại." });
+      }
 
-    req.user = user;
-    next();
+      // 4. Kiểm tra xem tài khoản có đang bị khóa không (An toàn thêm)
+      // if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      //   return res.status(423).json({ message: "Tài khoản đang bị khóa." });
+      // }
+
+      // 5. Gán thông tin user vào request để dùng ở các controller sau
+      req.user = user;
+      next();
+    });
+
   } catch (error) {
-    console.error("Error in authenticateToken middleware", error);
-    return res.status(500).json({ message: "Internal server error" });
+    console.error("Auth Middleware Error:", error);
+    return res.status(500).json({ message: "Lỗi hệ thống xác thực." });
   }
 };
 
@@ -117,4 +138,4 @@ const googleLogin = async (req, res) => {
   }
 }
 
-export { authenticateToken, googleLogin };
+export default { authenticateToken, googleLogin };

@@ -8,7 +8,7 @@ const list = async (req, res) => {
   try {
     const instructorId = req.user?.id || req.params.instructorId;
     const { section_id, _start, _end, _page, _limit, _sort, _order } = req.query;
-    
+
     if (!instructorId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -70,7 +70,7 @@ const list = async (req, res) => {
     // React-Admin headers
     res.set('X-Total-Count', count.toString());
     res.set('Access-Control-Expose-Headers', 'X-Total-Count');
-    
+
     return res.status(200).json({ data: data || [], total: count || 0 });
   } catch (error) {
     console.error("LessonController.list error:", error);
@@ -82,7 +82,7 @@ const getOne = async (req, res) => {
   try {
     const instructorId = req.user?.id || req.params.instructorId;
     const { lessonId } = req.params;
-    
+
     if (!instructorId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
@@ -117,6 +117,42 @@ const getOne = async (req, res) => {
     return res.status(500).json({ error: error.message });
   }
 };
+
+
+// const getSignedUrl = async (req, res) => {
+//   try {
+//     const { lessonId } = req.params;
+
+//     // 1. Lấy đúng đường dẫn từ DB
+//     const { data: lesson, error: dbError } = await supabase
+//       .from("lessons")
+//       .select("content_url")
+//       .eq("id", lessonId)
+//       .single();
+
+//     if (dbError || !lesson?.content_url) {
+//       return res.status(404).json({ error: "Không tìm thấy bài học trong DB" });
+//     }
+
+//     const objectPath = lesson.content_url;
+//     // Lúc này objectPath sẽ là: "course_1/section_1/lesson_1/bai1C.mp4"
+
+//     // 2. Tạo Signed URL
+//     const { data, error: storageError } = await supabase.storage
+//       .from('videos') // Tên bucket chính xác trong ảnh
+//       .createSignedUrl(objectPath, 3600); // Hết hạn sau 1 giờ
+
+//     if (storageError) {
+//       console.error("Lỗi Storage:", storageError);
+//       return res.status(400).json({ error: "File không tồn tại trong Storage", path: objectPath });
+//     }
+
+//     return res.status(200).json({ signedUrl: data.signedUrl });
+
+//   } catch (err) {
+//     return res.status(500).json({ error: "Server error" });
+//   }
+// };
 
 // Multer setup for video upload
 const storage = multer.memoryStorage();
@@ -225,7 +261,7 @@ const remove = async (req, res) => {
   try {
     const instructorId = req.user?.id || req.params.instructorId;
     const { lessonId } = req.params;
-    
+
     if (!instructorId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
