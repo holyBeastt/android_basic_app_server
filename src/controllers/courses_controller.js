@@ -1,5 +1,6 @@
 // controllers/auth_controller.js
 import supabase from "../config/supabase.js";
+import { decryptData } from "../utils/crypto.js";
 
 const getTopCoursesList = async (req, res) => {
   try {
@@ -102,18 +103,69 @@ const getCourseSectionsWithLessons = async (req, res) => {
 
 const getReviews = async (req, res) => {
   const courseId = req.params.id;
+  console.log("courseId:======= ", courseId);
 
-  const { data: reviews, error: sectionError } = await supabase
-    .from("reviews")
-    .select("*") // Lấy cả các bài học trong phần học
-    .eq("course_id", courseId);
+  try {
+    // 1. Lấy tất cả reviews của khóa học
+    const { data: reviews, error: reviewError } = await supabase
+      .from("reviews")
+      .select("id, course_id, user_id, rating, comment, created_at")
+      .eq("course_id", courseId)
+      .order("created_at", { ascending: false });
 
-  if (sectionError) {
-    console.log("Xảy ra lỗi khi lấy dữ liệu reviews");
-    return res.status(500).json({ error: sectionError.message });
+    if (reviewError) {
+      console.error("Xảy ra lỗi khi lấy dữ liệu reviews:", reviewError.message);
+      return res.status(500).json({ error: reviewError.message });
+    }
+
+    // 2. Lấy danh sách user_id duy nhất từ reviews
+    const userIds = [...new Set(reviews.map(r => r.user_id))];
+
+    // 3. Truy vấn thông tin users
+    let usersMap = {};
+    if (userIds.length > 0) {
+      const { data: users, error: usersError } = await supabase
+        .from("users")
+        .select("id, username")
+        .in("id", userIds);
+
+      if (!usersError && users) {
+        users.forEach(user => {
+          usersMap[user.id] = user.username;
+        });
+      }
+    }
+
+    // 4. Giải mã username và merge vào reviews
+    const decryptedReviews = reviews.map(review => {
+      let decryptedUsername = "Người dùng ẩn danh";
+      
+      const encryptedUsername = usersMap[review.user_id];
+      if (encryptedUsername) {
+        try {
+          decryptedUsername = decryptData(encryptedUsername);
+        } catch (err) {
+          console.error("Lỗi giải mã username:", err);
+        }
+      }
+
+      return {
+        id: review.id,
+        course_id: review.course_id,
+        user_id: review.user_id,
+        user_name: decryptedUsername,
+        rating: review.rating,
+        comment: review.comment,
+        created_at: review.created_at
+      };
+    });
+
+    return res.status(200).json(decryptedReviews);
+
+  } catch (err) {
+    console.error("Lỗi không xác định trong getReviews:", err);
+    return res.status(500).json({ error: "Lỗi hệ thống" });
   }
-
-  return res.status(200).json(reviews);
 };
 // const addReview = async (req, res) => {
 //   const courseId = req.params.id;
@@ -217,7 +269,78 @@ const addReview = async (req, res) => {
   }
 };
 
-import { decryptData } from "../utils/crypto.js"; // Đảm bảo bạn đã import hàm này
+// Kiểm tra xem user đã đánh giá khóa học chưa
+const checkUserReview = async (req, res) => {
+  const courseId = req.params.id;
+  const userId = req.user.id;
+  console.log("\n[CHECK-REVIEW] ===== BẮT ĐẦU =====");
+  console.log("[CHECK-REVIEW] courseId:", courseId, "userId:", userId);
+
+  try {
+    // 1. Kiểm tra review của user trong khóa học
+    const { data: review, error } = await supabase
+      .from("reviews")
+      .select("id, course_id, user_id, rating, comment, created_at")
+      .eq("course_id", courseId)
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("[CHECK-REVIEW] Lỗi khi kiểm tra review:", error.message);
+      return res.status(500).json({ error: "Lỗi hệ thống khi kiểm tra đánh giá." });
+    }
+
+    console.log("[CHECK-REVIEW] Kết quả query:", review);
+
+    // Nếu không có review, trả về hasReviewed: false
+    if (!review) {
+      console.log("[CHECK-REVIEW] => Chưa có review, trả về hasReviewed: false");
+      return res.status(200).json({
+        hasReviewed: false,
+        review: null
+      });
+    }
+    
+    console.log("[CHECK-REVIEW] => Đã có review ID:", review.id);
+
+    // 2. Lấy thông tin username từ bảng users
+    const { data: userData, error: userError } = await supabase
+      .from("users")
+      .select("username")
+      .eq("id", userId)
+      .single();
+
+    // 3. Giải mã username
+    let decryptedUsername = "Người dùng ẩn danh";
+    if (!userError && userData && userData.username) {
+      try {
+        decryptedUsername = decryptData(userData.username);
+      } catch (err) {
+        console.error("Lỗi giải mã username:", err);
+      }
+    }
+
+    // Trả về review với username đã giải mã
+    const decryptedReview = {
+      id: review.id,
+      course_id: review.course_id,
+      user_id: review.user_id,
+      user_name: decryptedUsername,
+      rating: review.rating,
+      comment: review.comment,
+      created_at: review.created_at
+    };
+
+    return res.status(200).json({
+      hasReviewed: true,
+      review: decryptedReview
+    });
+
+  } catch (err) {
+    console.error("Lỗi không xác định trong checkUserReview:", err.message);
+    return res.status(500).json({ error: "Lỗi hệ thống." });
+  }
+};
 
 const getTeacherInfo = async (req, res) => {
   const userId = req.params.id;
@@ -461,6 +584,7 @@ export default {
   getCourseWithSearch,
   getReviews,
   addReview,
+  checkUserReview,
   getTeacherInfo,
   getSignedUrl,
 };
