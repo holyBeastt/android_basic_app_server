@@ -11,7 +11,7 @@ const generateTokens = async (user) => {
   const accessToken = jwt.sign(
     { id: user.id },
     process.env.JWT_SECRET,
-    { expiresIn: '1h' }
+    { expiresIn: '20s' }
   );
 
   const refreshToken = jwt.sign(
@@ -380,6 +380,8 @@ const requestRefreshToken = async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: '1h' }
     );
+
+    console.log("token = ", newAccessToken);
 
     return res.status(200).json({ accessToken: newAccessToken });
 

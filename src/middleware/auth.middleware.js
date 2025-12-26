@@ -17,6 +17,7 @@ const authenticateToken = async (req, res, next) => {
     jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
       if (err) {
         if (err.name === "TokenExpiredError") {
+          console.log("token hết hạn")
           return res.status(401).json({
             code: "ACCESS_TOKEN_EXPIRED", // Mã để Flutter biết cần refresh
             message: "Token đã hết hạn"

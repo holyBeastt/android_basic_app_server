@@ -147,26 +147,38 @@ const addReview = async (req, res) => {
   return res.status(201).json({ message: "Đánh giá đã được gửi thành công." });
 };
 
+import { decryptData } from "../utils/crypto.js"; // Đảm bảo bạn đã import hàm này
 
 const getTeacherInfo = async (req, res) => {
   const userId = req.params.id;
 
   try {
-    // Lấy thông tin giảng viên
+    // 1. Chỉ lấy các trường cần thiết, tránh lấy password/token hash
     const { data: teacherInfo, error: teacherError } = await supabase
       .from("users")
-      .select("*")
+      .select("id, username, avatar_url, bio, is_instructor") // Liệt kê cụ thể các cột
       .eq("id", userId)
-      .single(); // vì mỗi user_id là duy nhất
+      .single();
 
-    if (teacherError) {
-      console.error("Lỗi khi lấy thông tin giảng viên:", teacherError.message);
-      return res
-        .status(500)
-        .json({ error: "Không thể lấy thông tin giảng viên." });
+    if (teacherError || !teacherInfo) {
+      console.error("Lỗi khi lấy thông tin giảng viên:", teacherError?.message);
+      return res.status(404).json({ error: "Không tìm thấy giảng viên." });
     }
 
-    // Lấy danh sách các khóa học của giảng viên đó
+    // 2. GIẢI MÃ DỮ LIỆU (Đây là phần quan trọng bạn đang thiếu)
+    try {
+      if (teacherInfo.username) {
+        teacherInfo.username = decryptData(teacherInfo.username);
+      }
+      if (teacherInfo.bio) {
+        teacherInfo.bio = decryptData(teacherInfo.bio);
+      }
+    } catch (decryptErr) {
+      console.error("Lỗi khi giải mã thông tin giảng viên:", decryptErr);
+      // Có thể giữ nguyên nếu dữ liệu chưa bị mã hóa hoặc lỗi key
+    }
+
+    // 3. Lấy danh sách khóa học
     const { data: courseList, error: courseError } = await supabase
       .from("courses")
       .select("*")
@@ -174,20 +186,62 @@ const getTeacherInfo = async (req, res) => {
 
     if (courseError) {
       console.error("Lỗi khi lấy danh sách khóa học:", courseError.message);
-      return res
-        .status(500)
-        .json({ error: "Không thể lấy danh sách khóa học của giảng viên." });
+      return res.status(500).json({ error: "Không thể lấy danh sách khóa học." });
     }
 
+    // Trả về kết quả sạch cho Frontend
     return res.status(200).json({
       teacher: teacherInfo,
-      courses: courseList,
+      courses: courseList || [],
     });
+
   } catch (err) {
     console.error("Lỗi không xác định:", err);
     return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
   }
 };
+
+
+// const getTeacherInfo = async (req, res) => {
+//   const userId = req.params.id;
+
+//   try {
+//     // Lấy thông tin giảng viên
+//     const { data: teacherInfo, error: teacherError } = await supabase
+//       .from("users")
+//       .select("*")
+//       .eq("id", userId)
+//       .single(); // vì mỗi user_id là duy nhất
+
+//     if (teacherError) {
+//       console.error("Lỗi khi lấy thông tin giảng viên:", teacherError.message);
+//       return res
+//         .status(500)
+//         .json({ error: "Không thể lấy thông tin giảng viên." });
+//     }
+
+//     // Lấy danh sách các khóa học của giảng viên đó
+//     const { data: courseList, error: courseError } = await supabase
+//       .from("courses")
+//       .select("*")
+//       .eq("user_id", userId);
+
+//     if (courseError) {
+//       console.error("Lỗi khi lấy danh sách khóa học:", courseError.message);
+//       return res
+//         .status(500)
+//         .json({ error: "Không thể lấy danh sách khóa học của giảng viên." });
+//     }
+
+//     return res.status(200).json({
+//       teacher: teacherInfo,
+//       courses: courseList,
+//     });
+//   } catch (err) {
+//     console.error("Lỗi không xác định:", err);
+//     return res.status(500).json({ error: "Đã xảy ra lỗi máy chủ." });
+//   }
+// };
 
 const getSignedUrl = async (req, res) => {
   const timestamp = new Date().toISOString();

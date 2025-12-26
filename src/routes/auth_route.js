@@ -8,4 +8,7 @@ router.post("/user/login", auth_controller.login);
 router.post("/user/signup", auth_controller.register);
 router.post("/user/google-login", auth_controller.googleLogin);
 
+// Route này công khai để App có thể đổi token mới
+router.post("/user/refresh-token", auth_controller.requestRefreshToken);
+
 export default router;
