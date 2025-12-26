@@ -220,11 +220,17 @@ const login = async (req, res) => {
 
 // ========== 2. ĐĂNG KÝ THƯỜNG ==========
 const register = async (req, res) => {
-  const { username_acc, password, confirmPassword, username, sex } = req.body;
+  const { username_acc, password, confirmPassword, username, email, sex } = req.body;
   const timestamp = new Date().toISOString();
 
-  if (!username_acc || !password || !username || !sex) {
+  if (!username_acc || !password || !username || !email || !sex) {
     return res.status(400).json({ error: "Vui lòng điền đầy đủ thông tin." });
+  }
+
+  // Validation email format
+  const emailRegex = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({ error: "Email không hợp lệ." });
   }
 
   if (!['male', 'female', 'other'].includes(sex)) {
@@ -232,6 +238,7 @@ const register = async (req, res) => {
   }
 
   try {
+    // Kiểm tra username_acc đã tồn tại
     const { data: existingUser } = await supabase
       .from("users")
       .select("id")
@@ -240,6 +247,17 @@ const register = async (req, res) => {
 
     if (existingUser) {
       return res.status(400).json({ error: "Tên đăng nhập đã tồn tại." });
+    }
+
+    // Kiểm tra email đã tồn tại
+    const { data: existingEmail } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingEmail) {
+      return res.status(400).json({ error: "Email đã được sử dụng." });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -251,6 +269,7 @@ const register = async (req, res) => {
         username_acc: username_acc,
         password: hashedPassword,
         username: encryptedDisplayName,
+        email: email,
         sex: sex,
         is_instructor: false,
         login_attempts: 0,  // Khởi tạo
