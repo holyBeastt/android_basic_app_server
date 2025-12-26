@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import logger from './logger.js';
 
 // Tạo transporter với Gmail
 const transporter = nodemailer.createTransport({
@@ -12,10 +13,9 @@ const transporter = nodemailer.createTransport({
 // Kiểm tra kết nối khi khởi động
 transporter.verify((error, success) => {
   if (error) {
-    console.error('❌ Gmail SMTP connection failed:', error. message);
+    logger.error('Gmail SMTP connection failed:', error.message);
   } else {
-    console.log('✅ Gmail SMTP ready to send emails');
-    console.log('   Email:', process.env.EMAIL_USER);
+    logger.info('Gmail SMTP ready');
   }
 });
 
@@ -26,16 +26,13 @@ transporter.verify((error, success) => {
  * @returns {Promise<{success: boolean, messageId?: string, error?: string}>}
  */
 export const sendAccountLockedEmail = async (userEmail, username) => {
-  console.log('📧 Đang gửi email cảnh báo tài khoản bị khóa');
-  console.log('   From:', process.env.EMAIL_USER);
-  console.log('   To:', userEmail);
-  console.log('   Username:', username);
-  
+  logger.debug('Sending account locked email');
+
   try {
     const info = await transporter.sendMail({
       from: {
         name: 'Quản Lý Khóa Học - Security Team',
-        address: process. env.EMAIL_USER
+        address: process.env.EMAIL_USER
       },
       to: userEmail,
       subject: '🔒 Cảnh báo:  Tài khoản bị khóa do nhập sai mật khẩu',
@@ -199,15 +196,15 @@ export const sendAccountLockedEmail = async (userEmail, username) => {
                 <ul>
                   <li>
                     <strong>Thời gian:</strong> 
-                    ${new Date().toLocaleString('vi-VN', { 
-                      timeZone: 'Asia/Ho_Chi_Minh',
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    })}
+                    ${new Date().toLocaleString('vi-VN', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      })}
                   </li>
                   <li><strong>Email tài khoản:</strong> ${userEmail}</li>
                   <li><strong>Tên người dùng:</strong> ${username}</li>
@@ -255,30 +252,25 @@ export const sendAccountLockedEmail = async (userEmail, username) => {
       `
     });
 
-    console.log('✅ Email đã gửi thành công qua Gmail!');
-    console.log('   Message ID:', info.messageId);
-    console.log('   Response:', info.response);
-    
-    return { 
-      success: true, 
-      messageId: info.messageId 
+    logger.debug('Email sent successfully');
+
+    return {
+      success: true,
+      messageId: info.messageId
     };
 
   } catch (error) {
-    console.error('❌ Lỗi gửi email qua Gmail: ');
-    console.error('   Error:', error.message);
-    
+    logger.error('Email send failed:', error.message);
+
     if (error.code === 'EAUTH') {
-      console.error('   → App Password không hợp lệ hoặc đã hết hạn');
-      console.error('   → Tạo lại tại:  https://myaccount.google.com/apppasswords');
+      logger.error('App Password invalid or expired');
     } else if (error.code === 'ECONNECTION') {
-      console.error('   → Không thể kết nối đến Gmail SMTP');
-      console.error('   → Kiểm tra kết nối Internet');
+      logger.error('Cannot connect to Gmail SMTP');
     }
-    
-    return { 
-      success: false, 
-      error: error. message 
+
+    return {
+      success: false,
+      error: error.message
     };
   }
 };

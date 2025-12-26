@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import User from "../models/user.js";
 import supabase from "../config/supabase.js";
+import logger from "../utils/logger.js";
 
 const authenticateToken = async (req, res, next) => {
   try {
@@ -9,7 +10,7 @@ const authenticateToken = async (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
 
     if (!token) {
-      console.log("lỗi token 1")
+      logger.debug("Token missing");
       return res.status(401).json({ message: "Không tìm thấy mã xác thực." });
     }
 
@@ -17,7 +18,7 @@ const authenticateToken = async (req, res, next) => {
     jwt.verify(token, process.env.JWT_SECRET, async (err, decoded) => {
       if (err) {
         if (err.name === "TokenExpiredError") {
-          console.log("token hết hạn")
+          logger.debug("Token expired");
           return res.status(401).json({
             code: "ACCESS_TOKEN_EXPIRED", // Mã để Flutter biết cần refresh
             message: "Token đã hết hạn"
@@ -48,7 +49,7 @@ const authenticateToken = async (req, res, next) => {
     });
 
   } catch (error) {
-    console.error("Auth Middleware Error:", error);
+    logger.error("Auth Middleware Error:", error);
     return res.status(500).json({ message: "Lỗi hệ thống xác thực." });
   }
 };
@@ -58,7 +59,7 @@ const googleLogin = async (req, res) => {
 
   try {
     const { idToken, email, displayName, photoUrl } = req.body;
-    console.log(`[${timestamp}] [GOOGLE LOGIN] Attempt: ${email}`);
+    logger.debug(`[GOOGLE LOGIN] Attempt`);
 
     // 1. Xác thực idToken với Google
     const ticket = await client.verifyIdToken({
@@ -84,7 +85,7 @@ const googleLogin = async (req, res) => {
 
     // 3. Nếu chưa có user -> Tạo mới
     if (!user) {
-      console.log(`[${timestamp}] [GOOGLE REGISTER] Creating new user for: ${googleEmail}`);
+      logger.debug(`[GOOGLE REGISTER] Creating new user`);
 
       // Tạo username từ phần đầu email nếu chưa có
       const generatedUsername = googleEmail.split('@')[0];
@@ -107,7 +108,7 @@ const googleLogin = async (req, res) => {
         .single();
 
       if (insertError) {
-        console.error("Insert Error:", insertError);
+        logger.error("Google Insert Error:", insertError);
         throw insertError;
       }
       user = newUser;
@@ -134,7 +135,7 @@ const googleLogin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`[${timestamp}] [GOOGLE AUTH ERROR]:`, error);
+    logger.error("[GOOGLE AUTH ERROR]:", error);
     return res.status(500).json({ message: 'Lỗi xác thực Google phía Server' });
   }
 }

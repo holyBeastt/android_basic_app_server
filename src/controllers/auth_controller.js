@@ -4,6 +4,7 @@ import { OAuth2Client } from 'google-auth-library';
 import jwt from "jsonwebtoken";
 import { encryptData, decryptData } from "../utils/crypto.js";
 import { sendAccountLockedEmail } from "../utils/emailService.js";
+import logger from "../utils/logger.js";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Hàm helper để tạo bộ đôi token
@@ -23,7 +24,7 @@ const generateTokens = async (user) => {
   const salt = 10;
   const hashedRefreshToken = await bcrypt.hash(refreshToken, salt);
 
-  console.log(`[DEBUG] Đang lưu Hash vào DB cho User ID:  ${user.id}`);
+  logger.debug(`Đang lưu Hash vào DB cho User ID: ${user.id}`);
 
   const { data, error } = await supabase
     .from('users')
@@ -37,9 +38,9 @@ const generateTokens = async (user) => {
     .select();
 
   if (error) {
-    console.error("❌ LỖI:  Không lưu được Refresh Token vào DB!", error);
+    logger.error("Không lưu được Refresh Token vào DB!", error);
   } else {
-    console.log("✅ Đã lưu Refresh Token Hash thành công!");
+    logger.debug("Đã lưu Refresh Token Hash thành công!");
   }
 
   return { accessToken, refreshToken };
@@ -78,7 +79,7 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
     if (userEmail) {
       const decryptedUsername = encryptedUsername ? decryptData(encryptedUsername) : 'User';
       sendAccountLockedEmail(userEmail, decryptedUsername).catch(err => {
-        console.error('⚠️ Email không gửi được (không ảnh hưởng):', err.message);
+        logger.error('Email không gửi được:', err.message);
       });
     }
 
@@ -106,7 +107,7 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
 };
 
 const performLazyMigration = async (user) => {
-  console.log("vào")
+  logger.debug("performLazyMigration: start");
   const fieldsToMigrate = ['username', 'bio']; // Danh sách các trường cần kiểm tra mã hóa
   let needsUpdate = false;
   const updateData = {};
@@ -114,7 +115,7 @@ const performLazyMigration = async (user) => {
   for (const field of fieldsToMigrate) {
     // Kiểm tra nếu trường có dữ liệu và CHƯA chứa ký tự phân tách của crypto (ví dụ ':')
     if (user[field] && !String(user[field]).includes(':')) {
-      console.log(`[MIGRATION] Encrypting legacy data for field [${field}] - User ID: ${user.id}`);
+      logger.debug(`[MIGRATION] Encrypting legacy data for field [${field}] - User ID: ${user.id}`);
       updateData[field] = encryptData(user[field]);
       user[field] = updateData[field]; // Cập nhật trực tiếp vào đối tượng user hiện tại
       needsUpdate = true;
@@ -128,11 +129,11 @@ const performLazyMigration = async (user) => {
       .eq('id', user.id);
 
     if (error) {
-      console.error(`[MIGRATION ERROR] Failed to update user ${user.id}:`, error);
+      logger.error(`[MIGRATION ERROR] Failed to update user:`, error);
     }
   }
 
-  console.log("ra")
+  logger.debug("performLazyMigration: end");
 
   return user;
 };
@@ -143,7 +144,7 @@ const login = async (req, res) => {
   const timestamp = new Date().toISOString();
 
   try {
-    console.log(`[${timestamp}] [LOGIN ATTEMPT] Account: ${username}`);
+    logger.debug(`[LOGIN ATTEMPT] Account: [HIDDEN]`);
 
     // Lấy thông tin user
     const { data: user, error } = await supabase
@@ -212,7 +213,7 @@ const login = async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
+    logger.error("Login error:", err);
     return res.status(500).json({ error: "Lỗi hệ thống khi đăng nhập" });
   }
 };
@@ -266,7 +267,7 @@ const register = async (req, res) => {
     });
 
   } catch (err) {
-    console.error(`[${timestamp}] Register Error:`, err);
+    logger.error("Register error:", err);
     return res.status(500).json({ error: "Lỗi khi tạo tài khoản." });
   }
 };
@@ -300,7 +301,7 @@ const googleLogin = async (req, res) => {
     }
 
     if (!user) {
-      console.log(`[REGISTER GOOGLE] New user: ${googleEmail}`);
+      logger.debug(`[REGISTER GOOGLE] New user registered`);
       const generatedUsername = googleEmail.split('@')[0];
       const encryptedName = encryptData(displayName || generatedUsername);
 
@@ -338,7 +339,7 @@ const googleLogin = async (req, res) => {
     });
 
   } catch (error) {
-    console.error(`[${timestamp}] [GOOGLE AUTH ERROR]:`, error);
+    logger.error("[GOOGLE AUTH ERROR]:", error);
     return res.status(500).json({ message: 'Lỗi xác thực Google phía Server' });
   }
 };
@@ -381,12 +382,12 @@ const requestRefreshToken = async (req, res) => {
       { expiresIn: '1h' }
     );
 
-    console.log("token = ", newAccessToken);
+    logger.debug("New access token generated");
 
     return res.status(200).json({ accessToken: newAccessToken });
 
   } catch (err) {
-    console.error("Refresh Token Error:", err);
+    logger.error("Refresh Token Error:", err);
     return res.status(500).json({ error: "Lỗi hệ thống" });
   }
 };

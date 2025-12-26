@@ -1,19 +1,20 @@
 // middleware/instructorAuth.middleware.js
 import supabase from "../config/supabase.js";
+import logger from "../utils/logger.js";
 
 const instructorAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: "Token không được cung cấp" });
     }
 
     const token = authHeader.substring(7);
-    
+
     // Verify JWT token with Supabase
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    
+
     if (error || !user) {
       return res.status(401).json({ error: "Token không hợp lệ" });
     }
@@ -46,7 +47,7 @@ const instructorAuth = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("InstructorAuth middleware error:", error);
+    logger.error("InstructorAuth middleware error:", error);
     return res.status(500).json({ error: "Lỗi xác thực" });
   }
 };
@@ -55,15 +56,15 @@ const instructorAuth = async (req, res, next) => {
 const optionalInstructorAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return next(); // Continue without user info
     }
 
     const token = authHeader.substring(7);
-    
+
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    
+
     if (!error && user) {
       const { data: userProfile } = await supabase
         .from("users")
@@ -82,7 +83,7 @@ const optionalInstructorAuth = async (req, res, next) => {
 
     next();
   } catch (error) {
-    console.error("OptionalInstructorAuth middleware error:", error);
+    logger.error("OptionalInstructorAuth middleware error:", error);
     next(); // Continue without user info
   }
 };

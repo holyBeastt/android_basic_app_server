@@ -1,22 +1,23 @@
 // Simple test middleware that bypasses complex authentication
 import jwt from "jsonwebtoken";
 import supabase from "../config/supabase.js";
+import logger from "../utils/logger.js";
 
 export const simpleTestAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    
+
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: "Token không được cung cấp" });
     }
 
     const token = authHeader.substring(7);
-    
+
     // For testing, allow simple bypass
     if (token === 'test-token') {
       // Get instructor ID from header for testing multiple instructors
       const testInstructorId = req.headers['x-test-instructor-id'] || '1';
-      
+
       // Mock user for testing
       req.user = {
         id: parseInt(testInstructorId),
@@ -26,16 +27,16 @@ export const simpleTestAuth = async (req, res, next) => {
       };
       return next();
     }
-    
+
     // Handle invalid test tokens
     if (token.startsWith('invalid') || token === 'invalid') {
       return res.status(401).json({ error: "Token không hợp lệ" });
     }
-    
+
     // Try to verify JWT token
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      
+
       // Get user details from database
       const { data: userProfile, error: profileError } = await supabase
         .from("users")
@@ -61,12 +62,12 @@ export const simpleTestAuth = async (req, res, next) => {
 
       next();
     } catch (jwtError) {
-      console.error("JWT verification error:", jwtError);
+      logger.error("JWT verification error:", jwtError);
       return res.status(401).json({ error: "Token không hợp lệ" });
     }
-    
+
   } catch (error) {
-    console.error("Simple auth middleware error:", error);
+    logger.error("Simple auth middleware error:", error);
     return res.status(500).json({ error: "Lỗi xác thực" });
   }
 };
