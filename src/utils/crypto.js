@@ -8,11 +8,20 @@ const algorithm = 'aes-256-cbc';
 
 // Lấy key từ file .env
 // Key PHẢI dài đúng 32 ký tự (bytes) cho aes-256
-const key = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+if (!ENCRYPTION_KEY) {
+  console.error('⚠️ WARNING: ENCRYPTION_KEY is not set in environment variables!');
+  console.error('⚠️ Please add ENCRYPTION_KEY to your .env file or Render environment settings.');
+}
+const key = ENCRYPTION_KEY ? Buffer.from(ENCRYPTION_KEY, 'hex') : null;
 
 // 1. HÀM MÃ HÓA (Dùng khi Lưu vào DB)
 export const encryptData = (text) => {
     if (!text) return null;
+    if (!key) {
+        console.error('Cannot encrypt: ENCRYPTION_KEY is not set');
+        return text; // Trả về text gốc nếu không có key
+    }
 
     try {
         // Chuyển text sang string phòng trường hợp đầu vào là số
@@ -42,6 +51,10 @@ export const encryptData = (text) => {
 // 2. HÀM GIẢI MÃ (Dùng khi lấy ra hiển thị)
 export const decryptData = (text) => {
     if (!text) return null;
+    if (!key) {
+        console.error('Cannot decrypt: ENCRYPTION_KEY is not set');
+        return text; // Trả về text gốc nếu không có key
+    }
 
     // --- LOGIC MIGRATION (Tương thích ngược) ---
     // Nếu chuỗi không chứa dấu ':', tức là dữ liệu cũ chưa mã hóa -> Trả về luôn
