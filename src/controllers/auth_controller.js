@@ -78,9 +78,16 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
     // GỬI EMAIL (không chặn flow chính)
     if (userEmail) {
       const decryptedUsername = encryptedUsername ? decryptData(encryptedUsername) : 'User';
-      sendAccountLockedEmail(userEmail, decryptedUsername).catch(err => {
-        logger.error('Email không gửi được:', err.message);
-      });
+      logger.debug(`📧 Preparing to send locked email to: ${userEmail}`);
+      sendAccountLockedEmail(userEmail, decryptedUsername)
+        .then(result => {
+          logger.debug(`📧 Email result:`, result);
+        })
+        .catch(err => {
+          logger.error('❌ Email không gửi được:', err.message);
+        });
+    } else {
+      logger.warn('⚠️ No email found for user, skipping email notification');
     }
 
     return {
