@@ -33,7 +33,7 @@ const sendEmailViaBrevo = async (to, subject, htmlContent) => {
     },
     body: JSON.stringify({
       sender: { 
-        name: 'Security Team', 
+        name: 'Quản Lý Khóa Học', 
         email: SENDER_EMAIL 
       },
       to: [{ email: to }],
