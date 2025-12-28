@@ -30,10 +30,17 @@ router.get("/search", courses_controller.getCourseWithSearch);
 // Thêm nhận xét cho khóa học
 router.post("/:id/reviews", auth_middleware.authenticateToken, courses_controller.addReview);
 
+// Kiểm tra user đã đánh giá khóa học chưa
+router.get("/:id/check-review", auth_middleware.authenticateToken, courses_controller.checkUserReview);
+
 // Route cho user xem khóa học đã mua
 router.get("/student/lessons/:lessonId/signed-url",
     auth_middleware.authenticateToken,
     auth_middleware.checkPaidStudentAccess,
     courses_controller.getSignedUrl);
+
+
+// Lấy video bài học
+router.get("/lessons/:lessonId/signed-url", auth_middleware.authenticateToken, courses_controller.getSignedUrl);
 
 export default router;
