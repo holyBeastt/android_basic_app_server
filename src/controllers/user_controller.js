@@ -24,7 +24,8 @@ const getUserInfo = async (req, res) => {
   console.log("Lấy thông tin người dùng")
   try {
     // Lấy userId từ params hoặc body (tùy bạn truyền kiểu nào)
-    const userId = req.params.userId
+    // const userId = req.params.userId
+    const userId = req.user.id;
     console.log("userId:=======", userId);
     if (!userId) {
       return res.status(400).json({ error: "Thiếu userId." });
@@ -56,10 +57,12 @@ const getUserInfo = async (req, res) => {
     return res.status(500).json({ error: "Lỗi server." });
   }
 };
+
 const updateUserInfo = async (req, res) => {
-  const { userId } = req.params;
+  // const { userId } = req.params;
+  const userId = req.user.id;
   const { username, oldPassword, password, bio, sex } = req.body;
-  console.log(req.body);
+
   try {
     // 1. Lấy user hiện tại từ Supabase
     const { data: users, error: fetchError } = await supabase

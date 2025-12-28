@@ -140,4 +140,18 @@ const googleLogin = async (req, res) => {
   }
 }
 
-export default { authenticateToken, googleLogin };
+const authorizeSelf = (req, res, next) => {
+  const paramUserId = req.params.userId;
+  const tokenUserId = req.user.id;
+
+  if (paramUserId !== tokenUserId) {
+    return res.status(403).json({
+      message: "Bạn không có quyền truy cập tài nguyên này"
+    });
+  }
+
+  next();
+};
+
+
+export default { authenticateToken, googleLogin, authorizeSelf };
