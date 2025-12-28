@@ -4,6 +4,7 @@ import "dotenv/config";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import logger from "./utils/logger.js";
+import enforceHttps from "./middleware/enforceHttps.middleware.js";
 
 const port = process.env.PORT || 3000;
 const hostname = process.env.HOST_NAME || "0.0.0.0";
@@ -15,22 +16,6 @@ const app = express();
 app.set("trust proxy", 1);
 
 // ========== 2. HTTPS Enforcement Middleware ==========
-const enforceHttps = (req, res, next) => {
-  // Skip in development
-  if (process.env.NODE_ENV !== "production") {
-    return next();
-  }
-
-  // Check X-Forwarded-Proto header (set by Render's proxy)
-  if (req.headers["x-forwarded-proto"] !== "https") {
-    // For API: reject with 403, do not redirect (mobile apps should use HTTPS directly)
-    return res.status(403).json({
-      error: "HTTPS required",
-      message: "This API only accepts HTTPS connections"
-    });
-  }
-  next();
-};
 app.use(enforceHttps);
 
 // ========== 3. Security Headers (Helmet) ==========
