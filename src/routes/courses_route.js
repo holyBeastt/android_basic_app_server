@@ -40,7 +40,10 @@ router.get("/student/lessons/:lessonId/signed-url",
     courses_controller.getSignedUrl);
 
 
-// Lấy video bài học
-router.get("/lessons/:lessonId/signed-url", auth_middleware.authenticateToken, courses_controller.getSignedUrl);
+// Lấy video bài học (kiểm tra quyền: giảng viên HOẶC học viên đã thanh toán)
+router.get("/lessons/:lessonId/signed-url",
+    auth_middleware.authenticateToken,
+    auth_middleware.checkVideoAccess,
+    courses_controller.getSignedUrl);
 
 export default router;
