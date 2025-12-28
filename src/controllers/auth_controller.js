@@ -64,7 +64,7 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
 
   // Nếu sai 3 lần → Khóa + Gửi email
   if (newAttempts >= 3) {
-    const lockTime = new Date(now.getTime() + 60 * 1000); // Khóa 60 giây
+    const lockTime = new Date(now.getTime() + 10 * 60 * 1000); // Khóa 10 phút
 
     // Cập nhật DB
     await supabase
@@ -92,7 +92,7 @@ const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail
 
     return {
       isLocked: true,
-      message: `Tài khoản bị khóa 1 phút do nhập sai mật khẩu 3 lần. Email cảnh báo đã được gửi.`,
+      message: `Tài khoản bị khóa 10 phút do nhập sai mật khẩu 3 lần. Email cảnh báo đã được gửi.`,
       attemptsLeft: 0
     };
   }

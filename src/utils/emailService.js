@@ -133,7 +133,7 @@ export const sendAccountLockedEmail = async (userEmail, username) => {
           <h2>Xin chào <span class="highlight">${username}</span>,</h2>
           
           <div class="danger-box">
-            <strong>⚠️ Tài khoản của bạn đã bị khóa tạm thời 1 phút!</strong>
+            <strong>⚠️ Tài khoản của bạn đã bị khóa tạm thời 10 phút!</strong>
           </div>
           
           <p>
@@ -153,7 +153,7 @@ export const sendAccountLockedEmail = async (userEmail, username) => {
                 minute: '2-digit'
               })}</li>
               <li><strong>Email tài khoản:</strong> ${userEmail}</li>
-              <li><strong>Thời gian khóa:</strong> 1 phút (60 giây)</li>
+              <li><strong>Thời gian khóa:</strong> 10 phút (600 giây)</li>
               <li><strong>Lý do:</strong> Nhập sai mật khẩu quá 3 lần</li>
             </ul>
           </div>

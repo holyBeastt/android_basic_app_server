@@ -23,7 +23,7 @@ async function uploadAvatarToSupabase(file, userId) {
 const getUserInfo = async (req, res) => {
   console.log("Lấy thông tin người dùng")
   try {
-    // Lấy userId từ params hoặc body (tùy bạn truyền kiểu nào)
+
     const userId = req.params.userId
     console.log("userId:=======", userId);
     if (!userId) {
