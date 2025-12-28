@@ -53,7 +53,7 @@ app.use(express.json());
 // ========== 5. Rate Limiting for Auth Routes ==========
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // 10 requests per windowMs per IP
+  max: 16,
   message: {
     error: "Too many requests",
     message: "Quá nhiều yêu cầu. Vui lòng thử lại sau 15 phút."

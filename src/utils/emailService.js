@@ -185,7 +185,126 @@ export const sendAccountLockedEmail = async (userEmail, username) => {
     };
   }
 };
+/**
+ * Gửi email mã xác thực mở khóa tài khoản
+ */
+export const sendVerificationCodeEmail = async (userEmail, username, code) => {
+  logger.info(`📧 Đang gửi mã xác thực đến: ${userEmail}`);
+
+  const subject = '🔐 Mã xác thực mở khóa tài khoản';
+  
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Mã xác thực</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+          line-height: 1.6;
+          color: #333;
+          background-color: #f5f5f5;
+          padding: 20px;
+        }
+        .email-container {
+          max-width: 500px;
+          margin: 0 auto;
+          background: #ffffff;
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+        .header {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          padding: 40px 30px;
+          text-align: center;
+        }
+        .header h1 { font-size: 24px; margin: 0; font-weight: 600; }
+        .content { padding: 40px 30px; text-align: center; }
+        .code-box {
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          color: white;
+          font-size: 36px;
+          font-weight: bold;
+          letter-spacing: 12px;
+          padding: 20px 30px;
+          border-radius: 12px;
+          margin: 25px 0;
+          display: inline-block;
+        }
+        .info-text {
+          color: #666;
+          font-size: 14px;
+          margin-top: 20px;
+        }
+        .warning {
+          background-color: #fff3cd;
+          border: 1px solid #ffc107;
+          color: #856404;
+          padding: 12px;
+          border-radius: 8px;
+          margin-top: 20px;
+          font-size: 13px;
+        }
+        .footer {
+          text-align: center;
+          padding: 20px;
+          border-top: 1px solid #e9ecef;
+          color: #999;
+          font-size: 12px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="email-container">
+        <div class="header">
+          <h1>🔐 Mã Xác Thực</h1>
+        </div>
+        
+        <div class="content">
+          <p>Xin chào <strong>${username}</strong>,</p>
+          <p style="margin-top: 15px;">Mã xác thực mở khóa tài khoản của bạn là:</p>
+          
+          <div class="code-box">${code}</div>
+          
+          <p class="info-text">
+            ⏱️ Mã có hiệu lực trong <strong>10 phút</strong>
+          </p>
+          
+          <div class="warning">
+            ⚠️ Không chia sẻ mã này với bất kỳ ai. Chúng tôi sẽ không bao giờ yêu cầu mã này qua điện thoại.
+          </div>
+        </div>
+        
+        <div class="footer">
+          <p>Email tự động từ hệ thống bảo mật</p>
+          <p><strong>Android Basic App</strong></p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    const result = await sendEmailViaBrevo(userEmail, subject, htmlContent);
+    logger.info(`✅ Mã xác thực đã gửi thành công đến ${userEmail}`);
+    return { success: true, messageId: result.messageId };
+
+  } catch (error) {
+    logger.error(`❌ Gửi mã xác thực thất bại đến ${userEmail}:`, error.message);
+    
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+};
 
 export default {
-  sendAccountLockedEmail
+  sendAccountLockedEmail,
+  sendVerificationCodeEmail
 };
