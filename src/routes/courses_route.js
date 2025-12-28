@@ -4,6 +4,12 @@ import auth_middleware from "../middleware/auth.middleware.js"
 
 const router = express.Router();
 
+// Route cho GIẢNG VIÊN xem video của khóa học mình sở hữu
+router.get("/instructor/lessons/:lessonId/signed-url",
+    auth_middleware.authenticateToken,
+    auth_middleware.checkInstructorAccess,
+    courses_controller.getSignedUrl);
+
 router.get("/top-courses-list", courses_controller.getTopCoursesList);
 
 // Lấy dữ liệu bài học của khóa học
@@ -24,7 +30,10 @@ router.get("/search", courses_controller.getCourseWithSearch);
 // Thêm nhận xét cho khóa học
 router.post("/:id/reviews", auth_middleware.authenticateToken, courses_controller.addReview);
 
-// Lấy video bài học
-router.get("/lessons/:lessonId/signed-url", auth_middleware.authenticateToken, courses_controller.getSignedUrl);
+// Route cho user xem khóa học đã mua
+router.get("/student/lessons/:lessonId/signed-url",
+    auth_middleware.authenticateToken,
+    auth_middleware.checkPaidStudentAccess,
+    courses_controller.getSignedUrl);
 
 export default router;

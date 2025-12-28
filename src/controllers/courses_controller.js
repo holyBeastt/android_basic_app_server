@@ -244,94 +244,32 @@ const getTeacherInfo = async (req, res) => {
 // };
 
 const getSignedUrl = async (req, res) => {
-  const timestamp = new Date().toISOString();
   try {
-    const userId = req.user.id;
-    const { lessonId } = req.params;
+    // lessonData đã được middleware checkVideoAccess query và gán vào req
+    const lessonData = req.lessonData;
 
-    console.log(`[${timestamp}] --- BẮT ĐẦU KIỂM TRA VIDEO ---`);
-    console.log(`[DEBUG] Input -> userId: ${userId}, lessonId: ${lessonId}`);
-
-    // 1. Lấy thông tin bài học và Join
-    const { data: lessonData, error: lessonError } = await supabase
-      .from('lessons')
-      .select(`
-        content_url,
-        course_id,
-        courses:course_id (
-          user_id
-        )
-      `)
-      .eq('id', lessonId)
-      .single();
-
-    if (lessonError || !lessonData) {
-      console.error(`[ERROR 1] Truy vấn bài học thất bại:`, lessonError?.message || "Không tìm thấy data");
-      return res.status(404).json({ error: "Bài học không tồn tại" });
-    }
-
-    const courseId = lessonData.course_id;
-    const instructorId = lessonData.courses?.user_id;
-    console.log(`[DEBUG] Lesson Data -> courseId: ${courseId}, instructorId: ${instructorId}`);
-    console.log(`[DEBUG] Content URL từ DB: "${lessonData.content_url}"`);
-
-    let hasAccess = false;
-
-    // 2. KIỂM TRA QUYỀN TRUY CẬP
-    if (userId === instructorId) {
-      console.log("[CHECK] Kết quả: TRÙNG KHỚP (User là Giảng viên)");
-      hasAccess = true;
-    } else {
-      console.log(`[CHECK] Đang kiểm tra thanh toán cho User: ${userId} tại Course: ${courseId}...`);
-      const { data: payment, error: paymentError } = await supabase
-        .from('payments')
-        .select('id, status')
-        .eq('user_id', userId)
-        .eq('course_id', courseId)
-        .eq('status', 'PAID')
-        .maybeSingle();
-
-      if (paymentError) console.error(`[ERROR 2] Lỗi truy vấn payment:`, paymentError.message);
-
-      if (payment) {
-        console.log(`[CHECK] Kết quả: ĐÃ THANH TOÁN (Payment ID: ${payment.id})`);
-        hasAccess = true;
-      } else {
-        console.warn(`[CHECK] Kết quả: TỪ CHỐI (Không tìm thấy bản ghi PAID)`);
-      }
-    }
-
-    // 3. XỬ LÝ KHI KHÔNG CÓ QUYỀN
-    if (!hasAccess) {
-      return res.status(403).json({ error: "Bạn không có quyền truy cập bài học này." });
-    }
-
-    // 4. TẠO SIGNED URL
-    // KIỂM TRA: content_url có bắt đầu bằng dấu "/" hay không? 
-    // Supabase đôi khi yêu cầu bỏ dấu "/" ở đầu nếu là đường dẫn tương đối.
+    // Xử lý content_url
     const cleanPath = lessonData.content_url.startsWith('/')
       ? lessonData.content_url.substring(1)
       : lessonData.content_url;
 
-    console.log(`[DEBUG] Đang tạo Signed URL cho path: "${cleanPath}" trong bucket: "videos"`);
+    // Tính thời gian signed URL dựa trên độ dài video
+    const videoDuration = lessonData.duration || 1800;
+    const expiresIn = Math.max(videoDuration * 2, 3600);
 
     const { data, error: storageError } = await supabase.storage
       .from('videos')
-      .createSignedUrl(cleanPath, 20);
+      .createSignedUrl(cleanPath, expiresIn);
 
     if (storageError) {
-      console.error(`[ERROR 3] Storage Error:`, storageError.message);
-      // Log thêm để kiểm tra nếu bucket tên là "videos" có tồn tại không
+      console.error(`[ERROR] Storage Error:`, storageError.message);
       return res.status(400).json({ error: "Lỗi Storage", detail: storageError.message });
     }
 
     if (!data?.signedUrl) {
-      console.error(`[ERROR 4] Không tạo được signedUrl mặc dù không có lỗi storage.`);
+      console.error(`[ERROR] Không tạo được signedUrl`);
       return res.status(500).json({ error: "Lỗi tạo link" });
     }
-
-    console.log(`[SUCCESS] Đã tạo thành công Signed URL.`);
-    console.log(`[URL] -> ${data.signedUrl}`);
 
     return res.status(200).json({ signedUrl: data.signedUrl });
 
@@ -340,6 +278,7 @@ const getSignedUrl = async (req, res) => {
     return res.status(500).json({ error: "Lỗi hệ thống" });
   }
 };
+
 
 export default {
   getTopCoursesList,

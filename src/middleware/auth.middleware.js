@@ -38,11 +38,6 @@ const authenticateToken = async (req, res, next) => {
         return res.status(404).json({ message: "Người dùng không tồn tại." });
       }
 
-      // 4. Kiểm tra xem tài khoản có đang bị khóa không (An toàn thêm)
-      // if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      //   return res.status(423).json({ message: "Tài khoản đang bị khóa." });
-      // }
-
       // 5. Gán thông tin user vào request để dùng ở các controller sau
       req.user = user;
       next();
@@ -140,4 +135,234 @@ const googleLogin = async (req, res) => {
   }
 }
 
-export default { authenticateToken, googleLogin };
+/**
+ * Middleware kiểm tra quyền giảng viên (sở hữu khóa học của bài học)
+ * Yêu cầu: authenticateToken đã chạy trước, req.params.lessonId tồn tại
+ */
+const checkInstructorAccess = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { lessonId } = req.params;
+
+    // Lấy thông tin bài học và kiểm tra quyền sở hữu
+    const { data: lessonData, error: lessonError } = await supabase
+      .from('lessons')
+      .select(`
+        id,
+        content_url,
+        course_id,
+        duration,
+        courses:course_id (
+          user_id
+        )
+      `)
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lessonData) {
+      return res.status(404).json({ error: "Bài học không tồn tại" });
+    }
+
+    const instructorId = lessonData.courses?.user_id;
+
+    // Kiểm tra user có phải là giảng viên sở hữu không
+    if (userId !== instructorId) {
+      return res.status(403).json({ error: "Bạn không phải giảng viên của khóa học này" });
+    }
+
+    // Gán lessonData vào request để controller sử dụng
+    req.lessonData = lessonData;
+    next();
+  } catch (error) {
+    logger.error("checkInstructorAccess Error:", error);
+    return res.status(500).json({ error: "Lỗi kiểm tra quyền giảng viên" });
+  }
+};
+
+/**
+ * Middleware kiểm tra quyền học viên đã thanh toán
+ * Yêu cầu: authenticateToken đã chạy trước, req.params.lessonId tồn tại
+ */
+const checkPaidStudentAccess = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { lessonId } = req.params;
+
+    // 🔍 DEBUG LOG: Thông tin request
+    logger.log("========== checkPaidStudentAccess DEBUG ==========");
+    logger.log("User ID đang request:", userId);
+    logger.log("Lesson ID yêu cầu:", lessonId);
+
+    // Lấy thông tin bài học
+    const { data: lessonData, error: lessonError } = await supabase
+      .from('lessons')
+      .select(`
+        id,
+        content_url,
+        course_id,
+        duration,
+        courses:course_id (
+          user_id
+        )
+      `)
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lessonData) {
+      logger.log("❌ Bài học không tồn tại. Lesson Error:", lessonError?.message);
+      return res.status(404).json({ error: "Bài học không tồn tại" });
+    }
+
+    const courseId = lessonData.course_id;
+
+    // 🔍 DEBUG LOG: Thông tin bài học
+    logger.log("Course ID của bài học:", courseId);
+
+    // Kiểm tra đã thanh toán chưa
+    const { data: payment, error: paymentError } = await supabase
+      .from('payments')
+      .select('id, status, user_id, course_id')
+      .eq('user_id', userId)
+      .eq('course_id', courseId)
+      .eq('status', 'PAID')
+      .maybeSingle();
+
+    // 🔍 DEBUG LOG: Kết quả query payment
+    logger.log("Payment Query Result:", payment);
+    logger.log("Payment Error:", paymentError?.message || "Không có lỗi");
+
+    if (paymentError) {
+      logger.error("checkPaidStudentAccess - Payment query error:", paymentError.message);
+    }
+
+    if (!payment) {
+      // Query lại tất cả payments của user cho course này để debug
+      const { data: allPayments } = await supabase
+        .from('payments')
+        .select('id, status, user_id, course_id, created_at')
+        .eq('user_id', userId)
+        .eq('course_id', courseId);
+
+      logger.log("📋 Tất cả payments của user cho course này:", allPayments);
+      logger.log("❌ Không tìm thấy payment với status='PAID'");
+      logger.log("🚫 TỪ CHỐI TRUY CẬP");
+      logger.log("===================================================");
+      return res.status(403).json({ error: "Bạn chưa thanh toán khóa học này" });
+    }
+
+    logger.log("✅ User ĐÃ THANH TOÁN - Cho phép truy cập");
+    logger.log("===================================================");
+
+    // Gán lessonData vào request để controller sử dụng
+    req.lessonData = lessonData;
+    next();
+  } catch (error) {
+    logger.error("checkPaidStudentAccess Error:", error);
+    return res.status(500).json({ error: "Lỗi kiểm tra quyền học viên" });
+  }
+};
+
+/**
+ * Middleware kiểm tra quyền truy cập video (Giảng viên HOẶC Học viên đã thanh toán)
+ * Đây là middleware kết hợp, cho phép cả 2 loại user truy cập
+ */
+const checkVideoAccess = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const { lessonId } = req.params;
+
+    // 🔍 DEBUG LOG: Thông tin request
+    logger.log("========== checkVideoAccess DEBUG ==========");
+    logger.log("User ID đang request:", userId);
+    logger.log("Lesson ID yêu cầu:", lessonId);
+
+    // Lấy thông tin bài học
+    const { data: lessonData, error: lessonError } = await supabase
+      .from('lessons')
+      .select(`
+        id,
+        content_url,
+        course_id,
+        duration,
+        courses:course_id (
+          user_id
+        )
+      `)
+      .eq('id', lessonId)
+      .single();
+
+    if (lessonError || !lessonData) {
+      logger.log("❌ Bài học không tồn tại. Lesson Error:", lessonError?.message);
+      return res.status(404).json({ error: "Bài học không tồn tại" });
+    }
+
+    const courseId = lessonData.course_id;
+    const instructorId = lessonData.courses?.user_id;
+
+    // 🔍 DEBUG LOG: Thông tin bài học
+    logger.log("Course ID của bài học:", courseId);
+    logger.log("Instructor ID (chủ khóa học):", instructorId);
+
+    let hasAccess = false;
+
+    // Kiểm tra 1: User là giảng viên?
+    if (userId === instructorId) {
+      logger.log("✅ User là GIẢNG VIÊN sở hữu khóa học");
+      hasAccess = true;
+    } else {
+      logger.log("👤 User KHÔNG phải giảng viên, kiểm tra thanh toán...");
+
+      // Kiểm tra 2: User đã thanh toán?
+      const { data: payment, error: paymentError } = await supabase
+        .from('payments')
+        .select('id, status, user_id, course_id')
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .eq('status', 'PAID')
+        .maybeSingle();
+
+      // 🔍 DEBUG LOG: Kết quả query payment
+      logger.log("Payment Query Result:", payment);
+      logger.log("Payment Error:", paymentError?.message || "Không có lỗi");
+
+      if (payment) {
+        logger.log("✅ User ĐÃ THANH TOÁN khóa học");
+        hasAccess = true;
+      } else {
+        // Query lại tất cả payments của user cho course này để debug
+        const { data: allPayments } = await supabase
+          .from('payments')
+          .select('id, status, user_id, course_id, created_at')
+          .eq('user_id', userId)
+          .eq('course_id', courseId);
+
+        logger.log("📋 Tất cả payments của user cho course này:", allPayments);
+        logger.log("❌ Không tìm thấy payment với status='PAID'");
+      }
+    }
+
+    if (!hasAccess) {
+      logger.log("🚫 TỪ CHỐI TRUY CẬP - User không có quyền xem video");
+      logger.log("==============================================");
+      return res.status(403).json({ error: "Bạn không có quyền truy cập bài học này" });
+    }
+
+    logger.log("✅ CHO PHÉP TRUY CẬP - Tạo signed URL...");
+    logger.log("==============================================");
+
+    // Gán lessonData vào request để controller sử dụng
+    req.lessonData = lessonData;
+    next();
+  } catch (error) {
+    logger.error("checkVideoAccess Error:", error);
+    return res.status(500).json({ error: "Lỗi kiểm tra quyền truy cập video" });
+  }
+};
+
+export default {
+  authenticateToken,
+  googleLogin,
+  checkInstructorAccess,
+  checkPaidStudentAccess,
+  checkVideoAccess
+};
