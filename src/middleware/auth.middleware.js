@@ -359,10 +359,24 @@ const checkVideoAccess = async (req, res, next) => {
   }
 };
 
+const authorizeSelf = (req, res, next) => {
+  const paramUserId = req.params.userId;
+  const tokenUserId = req.user.id;
+
+  if (paramUserId !== tokenUserId) {
+    return res.status(403).json({
+      message: "Bạn không có quyền truy cập tài nguyên này"
+    });
+  }
+
+  next();
+};
+
 export default {
   authenticateToken,
   googleLogin,
   checkInstructorAccess,
   checkPaidStudentAccess,
-  checkVideoAccess
+  checkVideoAccess,
+  authorizeSelf
 };

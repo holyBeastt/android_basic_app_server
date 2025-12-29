@@ -3,7 +3,12 @@ import bcrypt from "bcrypt";
 import { OAuth2Client } from 'google-auth-library';
 import jwt from "jsonwebtoken";
 import { encryptData, decryptData } from "../utils/crypto.js";
-import { sendAccountLockedEmail } from "../utils/emailService.js";
+import { sendAccountLockedEmail, sendVerificationCodeEmail } from "../utils/emailService.js";
+
+// Hàm tạo mã xác thực 6 số
+const generateVerificationCode = () => {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
 import logger from "../utils/logger.js";
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -46,70 +51,75 @@ const generateTokens = async (user) => {
   return { accessToken, refreshToken };
 };
 
-// ========== HÀM MỚI:  KIỂM TRA VÀ CẬP NHẬT SỐ LẦN ĐĂNG NHẬP SAI ==========
-const handleFailedLogin = async (userId, currentAttempts, lockedUntil, userEmail, encryptedUsername) => {
+// ========== HÀM XỬ LÝ ĐĂNG NHẬP SAI - GỬI MÃ XÁC THỰC ==========
+const handleFailedLogin = async (userId, currentAttempts, userEmail, encryptedUsername, verificationCode, codeExpiresAt) => {
   const now = new Date();
-
-  // Kiểm tra đang bị khóa
-  if (lockedUntil && new Date(lockedUntil) > now) {
-    const remainingTime = Math.ceil((new Date(lockedUntil) - now) / 1000);
-    return {
-      isLocked: true,
-      message: `Tài khoản đã bị khóa.  Vui lòng thử lại sau ${remainingTime} giây. `,
-      remainingTime
-    };
-  }
-
   const newAttempts = (currentAttempts || 0) + 1;
+  const MAX_ATTEMPTS = 5;
 
-  // Nếu sai 3 lần → Khóa + Gửi email
-  if (newAttempts >= 3) {
-    const lockTime = new Date(now.getTime() + 60 * 1000); // Khóa 60 giây
-
-    // Cập nhật DB
-    await supabase
-      .from('users')
-      .update({
-        login_attempts: newAttempts,
-        locked_until: lockTime.toISOString()
-      })
-      .eq('id', userId);
-
-    // GỬI EMAIL (không chặn flow chính)
-    if (userEmail) {
-      const decryptedUsername = encryptedUsername ? decryptData(encryptedUsername) : 'User';
-      logger.debug(`📧 Preparing to send locked email to: ${userEmail}`);
-      sendAccountLockedEmail(userEmail, decryptedUsername)
-        .then(result => {
-          logger.debug(`📧 Email result:`, result);
-        })
-        .catch(err => {
-          logger.error('❌ Email không gửi được:', err.message);
-        });
-    } else {
-      logger.warn('⚠️ No email found for user, skipping email notification');
-    }
-
+  // Kiểm tra đang bị khóa (có mã xác thực chưa hết hạn)
+  if (verificationCode && codeExpiresAt && new Date(codeExpiresAt) > now) {
     return {
-      isLocked: true,
-      message: `Tài khoản bị khóa 1 phút do nhập sai mật khẩu 3 lần. Email cảnh báo đã được gửi.`,
+      needsVerification: true,
+      message: 'Tài khoản đang bị khóa. Vui lòng nhập mã xác thực đã gửi về email.',
       attemptsLeft: 0
     };
   }
 
-  // Chưa đủ 3 lần
+  // Nếu sai đủ 5 lần → Khóa + Tạo mã + Gửi email
+  if (newAttempts >= MAX_ATTEMPTS) {
+    const code = generateVerificationCode();  // Mã gốc: "847291"
+    const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // Mã có hiệu lực 10 phút
+    
+    // HASH mã OTP trước khi lưu vào DB (bảo mật như password)
+    const hashedCode = await bcrypt.hash(code, 10);
+
+    // Cập nhật DB với mã đã được HASH
+    await supabase
+      .from('users')
+      .update({
+        login_attempts: newAttempts,
+        verification_code: hashedCode,  // Lưu hash, không lưu mã gốc
+        code_expires_at: codeExpiry.toISOString()
+      })
+      .eq('id', userId);
+
+    // GỬI EMAIL MÃ XÁC THỰC
+    if (userEmail) {
+      const decryptedUsername = encryptedUsername ? decryptData(encryptedUsername) : 'User';
+      logger.debug(`📧 Đang gửi mã xác thực đến: ${userEmail}`);
+      sendVerificationCodeEmail(userEmail, decryptedUsername, code)
+        .then(result => {
+          logger.debug(`📧 Kết quả gửi email:`, result);
+        })
+        .catch(err => {
+          logger.error('❌ Không gửi được email:', err.message);
+        });
+    } else {
+      logger.warn('⚠️ Không tìm thấy email, bỏ qua gửi mã');
+    }
+
+    return {
+      needsVerification: true,
+      message: `Tài khoản bị khóa do nhập sai mật khẩu ${MAX_ATTEMPTS} lần. Mã xác thực đã được gửi về email.`,
+      attemptsLeft: 0
+    };
+  }
+
+  // Chưa đủ 5 lần - cập nhật số lần thử
   await supabase
     .from('users')
     .update({
       login_attempts: newAttempts,
-      locked_until: null
+      verification_code: null,
+      code_expires_at: null
     })
     .eq('id', userId);
 
   return {
-    isLocked: false,
-    message: `Sai mật khẩu. Bạn còn ${3 - newAttempts} lần thử. `,
-    attemptsLeft: 3 - newAttempts
+    needsVerification: false,
+    message: `Sai mật khẩu. Bạn còn ${MAX_ATTEMPTS - newAttempts} lần thử.`,
+    attemptsLeft: MAX_ATTEMPTS - newAttempts
   };
 };
 
@@ -164,14 +174,13 @@ const login = async (req, res) => {
       return res.status(401).json({ error: "Tên đăng nhập không tồn tại." });
     }
 
-    // ========== KIỂM TRA TÀI KHOẢN CÓ BỊ KHÓA KHÔNG ==========
+    // ========== KIỂM TRA TÀI KHOẢN ĐANG YÊU CẦU MÃ XÁC THỰC ==========
     const now = new Date();
-    if (user.locked_until && new Date(user.locked_until) > now) {
-      const remainingTime = Math.ceil((new Date(user.locked_until) - now) / 1000);
+    if (user.verification_code && user.code_expires_at && new Date(user.code_expires_at) > now) {
       return res.status(423).json({
-        error: `Tài khoản bị khóa. Vui lòng thử lại sau ${remainingTime} giây.`,
-        remainingTime,
-        isLocked: true
+        error: 'Tài khoản đang bị khóa. Vui lòng nhập mã xác thực đã gửi về email.',
+        needsVerification: true,
+        username: username
       });
     }
 
@@ -183,16 +192,25 @@ const login = async (req, res) => {
       const failResult = await handleFailedLogin(
         user.id,
         user.login_attempts,
-        user.locked_until,
         user.email,
-        user.username
+        user.username,
+        user.verification_code,
+        user.code_expires_at
       );
+
+      // Nếu cần xác thực mã
+      if (failResult.needsVerification) {
+        return res.status(423).json({
+          error: failResult.message,
+          needsVerification: true,
+          username: username
+        });
+      }
 
       return res.status(401).json({
         error: failResult.message,
         attemptsLeft: failResult.attemptsLeft,
-        isLocked: failResult.isLocked,
-        remainingTime: failResult.remainingTime
+        needsVerification: false
       });
     }
 
@@ -454,9 +472,328 @@ const requestRefreshToken = async (req, res) => {
 //   }
 // };
 
+// ========== 5. XÁC THỰC MÃ MỞ KHÓA ==========
+const verifyUnlockCode = async (req, res) => {
+  const { username, code } = req.body;
+
+  if (!username || !code) {
+    return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập và mã xác thực.' });
+  }
+
+  try {
+    // Lấy thông tin user
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, verification_code, code_expires_at, login_attempts')
+      .eq('username_acc', username)
+      .single();
+
+    if (!user || error) {
+      return res.status(404).json({ error: 'Tài khoản không tồn tại.' });
+    }
+
+    const now = new Date();
+
+    // Kiểm tra mã đã hết hạn chưa
+    if (!user.verification_code || !user.code_expires_at) {
+      return res.status(400).json({ error: 'Không có mã xác thực nào được yêu cầu.', codeExpired: true });
+    }
+
+    if (new Date(user.code_expires_at) < now) {
+      return res.status(410).json({ 
+        error: 'Mã xác thực đã hết hạn. Vui lòng gửi lại mã mới.',
+        codeExpired: true 
+      });
+    }
+
+    // Kiểm tra mã có đúng không (so sánh với hash trong DB)
+    const isCodeValid = await bcrypt.compare(code, user.verification_code);
+    if (!isCodeValid) {
+      return res.status(401).json({ error: 'Mã xác thực không đúng.' });
+    }
+
+    // Mã đúng → Reset tài khoản
+    await supabase
+      .from('users')
+      .update({
+        login_attempts: 0,
+        verification_code: null,
+        code_expires_at: null
+      })
+      .eq('id', user.id);
+
+    logger.info(`✅ Tài khoản ${username} đã được mở khóa thành công.`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Xác thực thành công! Bạn có thể đăng nhập lại.'
+    });
+
+  } catch (err) {
+    logger.error('Verify unlock code error:', err);
+    return res.status(500).json({ error: 'Lỗi hệ thống.' });
+  }
+};
+
+// ========== 6. GỬI LẠI MÃ XÁC THỰC ==========
+const resendUnlockCode = async (req, res) => {
+  const { username } = req.body;
+
+  if (!username) {
+    return res.status(400).json({ error: 'Vui lòng nhập tên đăng nhập.' });
+  }
+
+  try {
+    // Lấy thông tin user
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, username, login_attempts')
+      .eq('username_acc', username)
+      .single();
+
+    if (!user || error) {
+      return res.status(404).json({ error: 'Tài khoản không tồn tại.' });
+    }
+
+    // Chỉ gửi lại nếu tài khoản đã bị khóa (login_attempts >= 5)
+    if (user.login_attempts < 5) {
+      return res.status(400).json({ error: 'Tài khoản chưa bị khóa.' });
+    }
+
+    const now = new Date();
+    const code = generateVerificationCode();  // Mã gốc gửi email
+    const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // 10 phút
+    
+    // HASH mã OTP trước khi lưu vào DB
+    const hashedCode = await bcrypt.hash(code, 10);
+
+    // Cập nhật mã đã HASH vào DB
+    await supabase
+      .from('users')
+      .update({
+        verification_code: hashedCode,  // Lưu hash, không lưu mã gốc
+        code_expires_at: codeExpiry.toISOString()
+      })
+      .eq('id', user.id);
+
+    // Gửi email
+    if (user.email) {
+      const decryptedUsername = user.username ? decryptData(user.username) : 'User';
+      sendVerificationCodeEmail(user.email, decryptedUsername, code)
+        .then(result => {
+          logger.debug(`📧 Mã mới đã được gửi:`, result);
+        })
+        .catch(err => {
+          logger.error('❌ Không gửi được email:', err.message);
+        });
+    }
+
+    logger.info(`📧 Đã gửi lại mã xác thực cho ${username}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mã xác thực mới đã được gửi về email của bạn.'
+    });
+
+  } catch (err) {
+    logger.error('Resend unlock code error:', err);
+    return res.status(500).json({ error: 'Lỗi hệ thống.' });
+  }
+};
+
+// ========== 7. QUÊN MẬT KHẨU - GỬI MÃ XÁC THỰC ==========
+const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ error: 'Vui lòng nhập email.' });
+  }
+
+  try {
+    // Tìm user theo email
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, email, username')
+      .eq('email', email)
+      .single();
+
+    if (!user || error) {
+      // Không tiết lộ email có tồn tại hay không (bảo mật)
+      return res.status(200).json({ 
+        success: true, 
+        message: 'Nếu email tồn tại, mã xác thực sẽ được gửi.' 
+      });
+    }
+
+    const now = new Date();
+    const code = generateVerificationCode();
+    const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // 10 phút
+    
+    // Hash mã trước khi lưu
+    const hashedCode = await bcrypt.hash(code, 10);
+
+    // Lưu mã vào DB (dùng cột RIÊNG cho reset password)
+    await supabase
+      .from('users')
+      .update({
+        reset_password_code: hashedCode,
+        reset_code_expires_at: codeExpiry.toISOString()
+      })
+      .eq('id', user.id);
+
+    // Gửi email
+    const decryptedUsername = user.username ? decryptData(user.username) : 'User';
+    sendVerificationCodeEmail(user.email, decryptedUsername, code)
+      .then(result => {
+        logger.debug(`📧 Mã reset password đã gửi:`, result);
+      })
+      .catch(err => {
+        logger.error('❌ Không gửi được email:', err.message);
+      });
+
+    logger.info(`📧 Đã gửi mã reset password cho email: ${email}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mã xác thực đã được gửi về email của bạn.'
+    });
+
+  } catch (err) {
+    logger.error('Forgot password error:', err);
+    return res.status(500).json({ error: 'Lỗi hệ thống.' });
+  }
+};
+
+// ========== 8. XÁC THỰC MÃ RESET PASSWORD ==========
+const verifyResetCode = async (req, res) => {
+  const { email, code } = req.body;
+
+  if (!email || !code) {
+    return res.status(400).json({ error: 'Vui lòng nhập email và mã xác thực.' });
+  }
+
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, reset_password_code, reset_code_expires_at')
+      .eq('email', email)
+      .single();
+
+    if (!user || error) {
+      return res.status(404).json({ error: 'Email không tồn tại.' });
+    }
+
+    const now = new Date();
+
+    // Kiểm tra mã hết hạn
+    if (!user.reset_password_code || !user.reset_code_expires_at) {
+      return res.status(400).json({ error: 'Không có mã xác thực nào được yêu cầu.' });
+    }
+
+    if (new Date(user.reset_code_expires_at) < now) {
+      return res.status(410).json({ 
+        error: 'Mã xác thực đã hết hạn.',
+        codeExpired: true 
+      });
+    }
+
+    // So sánh mã với hash
+    const isCodeValid = await bcrypt.compare(code, user.reset_password_code);
+    if (!isCodeValid) {
+      return res.status(401).json({ error: 'Mã xác thực không đúng.' });
+    }
+
+    // Mã đúng - trả về token tạm để cho phép reset password
+    // (Không xóa mã ngay, để dùng ở bước tiếp theo)
+    logger.info(`✅ Mã reset password đúng cho email: ${email}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mã xác thực đúng. Bạn có thể đặt mật khẩu mới.',
+      canResetPassword: true
+    });
+
+  } catch (err) {
+    logger.error('Verify reset code error:', err);
+    return res.status(500).json({ error: 'Lỗi hệ thống.' });
+  }
+};
+
+// ========== 9. ĐẶT MẬT KHẨU MỚI ==========
+const resetPassword = async (req, res) => {
+  const { email, code, newPassword } = req.body;
+
+  if (!email || !code || !newPassword) {
+    return res.status(400).json({ error: 'Vui lòng nhập đầy đủ thông tin.' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Mật khẩu phải có ít nhất 6 ký tự.' });
+  }
+
+  try {
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id, reset_password_code, reset_code_expires_at')
+      .eq('email', email)
+      .single();
+
+    if (!user || error) {
+      return res.status(404).json({ error: 'Email không tồn tại.' });
+    }
+
+    const now = new Date();
+
+    // Kiểm tra mã hết hạn
+    if (!user.reset_password_code || !user.reset_code_expires_at) {
+      return res.status(400).json({ error: 'Không có mã xác thực nào được yêu cầu.' });
+    }
+
+    if (new Date(user.reset_code_expires_at) < now) {
+      return res.status(410).json({ error: 'Mã xác thực đã hết hạn. Vui lòng yêu cầu mã mới.' });
+    }
+
+    // Xác thực mã lần nữa để đảm bảo an toàn
+    const isCodeValid = await bcrypt.compare(code, user.reset_password_code);
+    if (!isCodeValid) {
+      return res.status(401).json({ error: 'Mã xác thực không đúng.' });
+    }
+
+    // Hash mật khẩu mới
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Cập nhật password và xóa mã reset password
+    await supabase
+      .from('users')
+      .update({
+        password: hashedPassword,
+        reset_password_code: null,
+        reset_code_expires_at: null,
+        login_attempts: 0  // Reset số lần đăng nhập sai
+      })
+      .eq('id', user.id);
+
+    logger.info(`✅ Đã reset password thành công cho email: ${email}`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Đặt mật khẩu mới thành công! Bạn có thể đăng nhập.'
+    });
+
+  } catch (err) {
+    logger.error('Reset password error:', err);
+    return res.status(500).json({ error: 'Lỗi hệ thống.' });
+  }
+};
+
 export default {
   login,
   register,
   googleLogin,
-  requestRefreshToken
+  requestRefreshToken,
+  verifyUnlockCode,
+  resendUnlockCode,
+  forgotPassword,
+  verifyResetCode,
+  resetPassword
 };
