@@ -502,9 +502,8 @@ const getSignedUrl = async (req, res) => {
       ? lessonData.content_url.substring(1)
       : lessonData.content_url;
 
-    // Tính thời gian signed URL dựa trên độ dài video
-    const videoDuration = lessonData.duration || 1800;
-    const expiresIn = Math.max(videoDuration * 2, 3600);
+    // Thời gian signed URL hết hạn: 20 giây
+    const expiresIn = 20;
 
     const { data, error: storageError } = await supabase.storage
       .from('videos')
