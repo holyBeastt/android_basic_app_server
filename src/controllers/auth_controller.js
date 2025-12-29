@@ -17,7 +17,7 @@ const generateTokens = async (user) => {
   const accessToken = jwt.sign(
     { id: user.id },
     process.env.JWT_SECRET,
-    { expiresIn: '20s' }
+    { expiresIn: '60s' }
   );
 
   const refreshToken = jwt.sign(
@@ -70,7 +70,7 @@ const handleFailedLogin = async (userId, currentAttempts, userEmail, encryptedUs
   if (newAttempts >= MAX_ATTEMPTS) {
     const code = generateVerificationCode();  // Mã gốc: "847291"
     const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // Mã có hiệu lực 10 phút
-    
+
     // HASH mã OTP trước khi lưu vào DB (bảo mật như password)
     const hashedCode = await bcrypt.hash(code, 10);
 
@@ -500,9 +500,9 @@ const verifyUnlockCode = async (req, res) => {
     }
 
     if (new Date(user.code_expires_at) < now) {
-      return res.status(410).json({ 
+      return res.status(410).json({
         error: 'Mã xác thực đã hết hạn. Vui lòng gửi lại mã mới.',
-        codeExpired: true 
+        codeExpired: true
       });
     }
 
@@ -563,7 +563,7 @@ const resendUnlockCode = async (req, res) => {
     const now = new Date();
     const code = generateVerificationCode();  // Mã gốc gửi email
     const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // 10 phút
-    
+
     // HASH mã OTP trước khi lưu vào DB
     const hashedCode = await bcrypt.hash(code, 10);
 
@@ -619,16 +619,16 @@ const forgotPassword = async (req, res) => {
 
     if (!user || error) {
       // Không tiết lộ email có tồn tại hay không (bảo mật)
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Nếu email tồn tại, mã xác thực sẽ được gửi.' 
+      return res.status(200).json({
+        success: true,
+        message: 'Nếu email tồn tại, mã xác thực sẽ được gửi.'
       });
     }
 
     const now = new Date();
     const code = generateVerificationCode();
     const codeExpiry = new Date(now.getTime() + 10 * 60 * 1000); // 10 phút
-    
+
     // Hash mã trước khi lưu
     const hashedCode = await bcrypt.hash(code, 10);
 
@@ -691,9 +691,9 @@ const verifyResetCode = async (req, res) => {
     }
 
     if (new Date(user.reset_code_expires_at) < now) {
-      return res.status(410).json({ 
+      return res.status(410).json({
         error: 'Mã xác thực đã hết hạn.',
-        codeExpired: true 
+        codeExpired: true
       });
     }
 
